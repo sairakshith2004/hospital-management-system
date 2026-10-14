@@ -1,0 +1,18 @@
+# dependencies
+node_modules/
+# build and test output
+dist/
+coverage/
+*.tsbuildinfo
+# environment files: secrets are never committed
+.env
+.env.*
+!.env.example
+# logs
+*.log
+npm-debug.log*
+# OS and editor
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
