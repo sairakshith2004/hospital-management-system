@@ -1,0 +1,17 @@
+/** Role codes, as defined in docs/permissions.md section 1. */
+export const ROLE_CODES = [
+  'SA',
+  'ADM',
+  'REC',
+  'DOC',
+  'NUR',
+  'PHA',
+  'LAB',
+  'FIN',
+  'HR',
+  'INV',
+  'EQP',
+  'MKT',
+] as const;
+
+export type RoleCode = (typeof ROLE_CODES)[number];

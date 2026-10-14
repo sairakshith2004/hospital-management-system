@@ -15,14 +15,15 @@ This README is updated with every change, so it always describes how the project
 3. [Repository layout](#repository-layout)
 4. [Prerequisites](#prerequisites)
 5. [Getting started](#getting-started)
-6. [Local database](#local-database)
-7. [npm scripts](#npm-scripts)
-8. [Code quality tooling](#code-quality-tooling)
-9. [Security practices](#security-practices)
-10. [Git workflow](#git-workflow)
-11. [Design documents](#design-documents)
-12. [Roadmap](#roadmap)
-13. [Change log](#change-log)
+6. [Running the API](#running-the-api)
+7. [Local database](#local-database)
+8. [npm scripts](#npm-scripts)
+9. [Code quality tooling](#code-quality-tooling)
+10. [Security practices](#security-practices)
+11. [Git workflow](#git-workflow)
+12. [Design documents](#design-documents)
+13. [Roadmap](#roadmap)
+14. [Change log](#change-log)
 
 ---
 
@@ -38,8 +39,11 @@ This README is updated with every change, so it always describes how the project
 - Design documentation in `docs/`.
 - Root tooling: npm workspaces, TypeScript, ESLint, Prettier and Vitest.
 - A local PostgreSQL 17.11 database running in Docker.
+- `packages/shared`: the 12 role codes, shared by API and web.
+- `apps/api`: an Express API skeleton with configuration validation and a `GET /health` endpoint (no database access yet).
+- 11 automated tests.
 
-**What doesn't exist yet:** application code (API, web app, shared package), database tables and migrations, and CI. See the [Roadmap](#roadmap).
+**What doesn't exist yet:** the web app, database tables and migrations, authentication, and CI. See the [Roadmap](#roadmap).
 
 ---
 
@@ -65,10 +69,27 @@ What's in the repository right now:
 .
 ├── docs/                         Design documentation (see "Design documents")
 │   └── adr/                      Architecture decision records 0001–0013
+├── apps/
+│   └── api/                      Express API (@hospitalos/api)
+│       ├── package.json          Scripts: dev, start, typecheck
+│       ├── tsconfig.json         Node ESM settings (NodeNext)
+│       └── src/
+│           ├── server.ts         Entry point: validate config → start listening → shut down cleanly
+│           ├── app.ts            createApp(): builds the Express app and its routes
+│           ├── app.test.ts       Tests for GET /health
+│           └── config/
+│               ├── env.ts        Zod schema for environment variables; loadEnv()
+│               └── env.test.ts   Tests for configuration validation
+├── packages/
+│   └── shared/                   Code shared by API and web (@hospitalos/shared)
+│       └── src/
+│           ├── index.ts          ROLE_CODES: the 12 roles from docs/permissions.md
+│           └── index.test.ts
 ├── docker/
 │   └── postgres/init/
 │       └── 01-databases.sql      Runs once on a fresh database volume: creates hms_test and extensions
 ├── docker-compose.yml            Local PostgreSQL 17.11 (digest-pinned, localhost only)
+├── vitest.config.ts              Runs each folder in apps/ and packages/ as its own test project
 ├── .env.example                  Names of the environment variables, placeholders only
 ├── package.json                  Root npm workspace and scripts
 ├── package-lock.json             Exact dependency versions
@@ -82,13 +103,9 @@ What's in the repository right now:
 └── .gitignore                    Keeps node_modules, build output and .env out of git
 ```
 
-**Planned workspaces** (declared in `package.json`; folders arrive in later Day 3 commits):
+**Still to come:** `apps/web/` (the React web app, next commit).
 
-```
-apps/api/          Express API
-apps/web/          React web app
-packages/shared/   Code shared by API and web (Zod schemas, role and permission codes)
-```
+**How workspaces connect:** npm links each workspace into `node_modules/@hospitalos/`, so the API can `import { ROLE_CODES } from '@hospitalos/shared'` like any other package. The shared package ships TypeScript source directly, so it has no build step.
 
 ---
 
@@ -137,10 +154,49 @@ chmod 600 .env
 npm run db:up
 
 # 5. Check that everything works
-npm run lint && npm run format:check && npm test
+npm run lint && npm run format:check && npm run typecheck && npm test
+
+# 6. Run the API and call its health endpoint
+npm run dev:api                      # in one terminal; Ctrl+C stops it
+curl -s 127.0.0.1:3000/health        # in another: {"status":"ok"}
 ```
 
 On Linux, use `sed -i` (without `''`) in step 3.
+
+---
+
+## Running the API
+
+`npm run dev:api` starts the API with `tsx` in watch mode, so it restarts when you save a file. Settings are read from the root `.env` through Node's built-in `--env-file` option; no `dotenv` package is needed.
+
+**How a request is handled today:**
+```
+.env ──► process.env ──► loadEnv() (config/env.ts) ──► createApp() (app.ts) ──► listen(HOST, PORT)
+                              │                                │
+                              └─ invalid → print problems,     └─ GET /health → 200 {"status":"ok"}
+                                 exit with code 1
+```
+
+**Environment variables:**
+| Variable | Required | Default | Rule |
+|---|---|---|---|
+| `DATABASE_URL` | Yes | — | Must be a `postgres://` or `postgresql://` URL. Required even though the database isn't used until Day 4, so a misconfigured app never starts. |
+| `PORT` | No | `3000` | Whole number from 1 to 65535 |
+| `HOST` | No | `127.0.0.1` | Address to listen on. Localhost by default; a deployed container would set `0.0.0.0`. |
+| `NODE_ENV` | No | `development` | `development`, `test` or `production` |
+
+**If the configuration is wrong,** the API refuses to start and lists every problem. It names the variable and the rule, **never the value**, so a password can't leak into the terminal or logs. For example:
+```
+Invalid environment configuration:
+- PORT: Too big: expected number to be <=65535
+- DATABASE_URL: Invalid URL
+```
+
+**`GET /health`** reports only that the process is running: `200 {"status":"ok"}`. It deliberately exposes no version, environment or configuration details. The Express `X-Powered-By` header is turned off, and JSON request bodies are limited to 100 KB. A database readiness check arrives on Day 4.
+
+**Why `app.ts` and `server.ts` are separate:** `createApp()` only builds the app; `server.ts` starts it. Tests use the app directly through `supertest` without opening a network port, and future middleware (security headers, sessions, CSRF) is added in one place.
+
+**Logging:** plain `console` for now. On Day 4 it's replaced by a structured logger (pino) that strips sensitive fields.
 
 ---
 
@@ -184,7 +240,8 @@ Run these from the repository root.
 | `npm run format` | Prettier: rewrites files to the project style |
 | `npm run format:check` | Prettier: checks only, changes nothing (used in CI) |
 | `npm run typecheck` | Type-checks every workspace that has a `typecheck` script |
-| `npm test` | Runs all Vitest tests. Passes with no tests until the first tests arrive in the next commit. |
+| `npm test` | Runs all Vitest tests (currently 11, in 3 files). No database is needed. |
+| `npm run dev:api` | Starts the API in watch mode at `http://127.0.0.1:3000` |
 | `npm run build` | Builds every workspace that has a `build` script |
 | `npm run db:up` | Starts PostgreSQL and waits until it's healthy |
 | `npm run db:down` | Stops PostgreSQL (keeps data) |
@@ -203,6 +260,24 @@ Run these from the repository root.
 | Vitest | 5.0.4 | Test runner for every workspace |
 
 `.npmrc` sets `save-exact=true`, so every dependency is pinned to an exact version, and `engine-strict=true`, so npm refuses to run on an unsupported Node version.
+
+**API dependencies (`apps/api`):**
+| Package | Version | Kind | Purpose |
+|---|---|---|---|
+| express | 5.3.0 | runtime | HTTP server and routing |
+| zod | 4.6.7 | runtime | Validates configuration (and, from Day 4, requests) |
+| tsx | 4.23.15 | dev | Runs TypeScript directly, with watch mode |
+| supertest | 7.3.1 | dev | Calls the Express app in tests without a network port |
+| @types/express, @types/node, @types/supertest | 5.0.6, 26.6.5, 7.2.1 | dev | Type definitions |
+
+`packages/shared` has no dependencies yet.
+
+**Blocked install script:** npm 11 doesn't run packages' install scripts unless they're approved.
+- **Exactly one is blocked:** `esbuild`'s `postinstall` (`node install.js`). esbuild is used by `tsx` and by Vite inside Vitest.
+- **Nothing is broken by this.** esbuild's binary for your platform (for example `@esbuild/darwin-arm64`) is installed as a separate optional package. The API starts and all tests pass without the script.
+- **What the script would do:** download the binary if that package were missing, and slightly speed up the command-line tool's startup.
+- **What to do if it ever fails** (for example if optional dependencies were skipped): approve only esbuild with `npm install-scripts approve esbuild`, never all scripts.
+- `npm install-scripts ls` shows the current list.
 
 ---
 
@@ -246,7 +321,6 @@ The full day-by-day plan is in [`docs/roadmap.md`](docs/roadmap.md). The rest of
 
 | Next commit | Adds |
 |---|---|
-| Commit 4 | `packages/shared` and `apps/api`: environment validation, `GET /health`, first tests |
 | Commit 5 | `apps/web`: minimal Vite + React + TypeScript app |
 | Commit 6 | GitHub Actions CI (lint, format, typecheck, test, build) with the pinned Postgres service |
 
@@ -261,4 +335,5 @@ The full day-by-day plan is in [`docs/roadmap.md`](docs/roadmap.md). The rest of
 | `a08d322` | Day 3 safeguards: nurse session assignments, return checklist, pinned Postgres, styling plan |
 | `ae58fc1` | Root workspace tooling: TypeScript, ESLint, Prettier, Vitest |
 | `3e6d3a1` | Local PostgreSQL 17.11 via Docker Compose, digest-pinned |
-| *(README commit)* | README rewritten to document how the project works; kept up to date from now on. Pushed directly to `main` with the Day 3 commits above. |
+| `0110c51` | README rewritten to document how the project works; kept up to date from now on. Pushed directly to `main` with the Day 3 commits above. |
+| *(commit 4)* | Shared package (role codes) and API skeleton: configuration validation, `GET /health`, 11 tests |
