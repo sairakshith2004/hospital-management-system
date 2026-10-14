@@ -16,14 +16,15 @@ This README is updated with every change, so it always describes how the project
 4. [Prerequisites](#prerequisites)
 5. [Getting started](#getting-started)
 6. [Running the API](#running-the-api)
-7. [Local database](#local-database)
-8. [npm scripts](#npm-scripts)
-9. [Code quality tooling](#code-quality-tooling)
-10. [Security practices](#security-practices)
-11. [Git workflow](#git-workflow)
-12. [Design documents](#design-documents)
-13. [Roadmap](#roadmap)
-14. [Change log](#change-log)
+7. [Running the web app](#running-the-web-app)
+8. [Local database](#local-database)
+9. [npm scripts](#npm-scripts)
+10. [Code quality tooling](#code-quality-tooling)
+11. [Security practices](#security-practices)
+12. [Git workflow](#git-workflow)
+13. [Design documents](#design-documents)
+14. [Roadmap](#roadmap)
+15. [Change log](#change-log)
 
 ---
 
@@ -41,9 +42,10 @@ This README is updated with every change, so it always describes how the project
 - A local PostgreSQL 17.11 database running in Docker.
 - `packages/shared`: the 12 role codes, shared by API and web.
 - `apps/api`: an Express API skeleton with configuration validation and a `GET /health` endpoint (no database access yet).
-- 11 automated tests.
+- `apps/web`: a minimal React + TypeScript web app (Vite) with a HospitalOS landing screen and a live API-status indicator.
+- 20 automated tests.
 
-**What doesn't exist yet:** the web app, database tables and migrations, authentication, and CI. See the [Roadmap](#roadmap).
+**What doesn't exist yet:** database tables and migrations, authentication, patient features, styling with Tailwind CSS and shadcn/ui (Day 6), and CI. See the [Roadmap](#roadmap).
 
 ---
 
@@ -70,16 +72,28 @@ What's in the repository right now:
 ├── docs/                         Design documentation (see "Design documents")
 │   └── adr/                      Architecture decision records 0001–0013
 ├── apps/
-│   └── api/                      Express API (@hospitalos/api)
-│       ├── package.json          Scripts: dev, start, typecheck
-│       ├── tsconfig.json         Node ESM settings (NodeNext)
+│   ├── api/                      Express API (@hospitalos/api)
+│   │   ├── package.json          Scripts: dev, start, typecheck
+│   │   ├── tsconfig.json         Node ESM settings (NodeNext)
+│   │   └── src/
+│   │       ├── server.ts         Entry point: validate config → start listening → shut down cleanly
+│   │       ├── app.ts            createApp(): builds the Express app and its routes
+│   │       ├── app.test.ts       Tests for GET /health
+│   │       └── config/
+│   │           ├── env.ts        Zod schema for environment variables; loadEnv()
+│   │           └── env.test.ts   Tests for configuration validation
+│   └── web/                      React web app (@hospitalos/web)
+│       ├── index.html            HTML page that loads the app
+│       ├── vite.config.ts        Dev server (127.0.0.1:5173), /api proxy, test settings
+│       ├── tsconfig.json         Browser + JSX settings (bundler resolution)
 │       └── src/
-│           ├── server.ts         Entry point: validate config → start listening → shut down cleanly
-│           ├── app.ts            createApp(): builds the Express app and its routes
-│           ├── app.test.ts       Tests for GET /health
-│           └── config/
-│               ├── env.ts        Zod schema for environment variables; loadEnv()
-│               └── env.test.ts   Tests for configuration validation
+│           ├── main.tsx          Entry point: mounts <App /> into #root
+│           ├── App.tsx           Landing screen
+│           ├── ApiStatus.tsx     "System status" card: checking / online / unreachable + "Check again"
+│           ├── api.ts            checkApiHealth(): calls /api/health with a 5-second timeout
+│           ├── index.css         Minimal accessible styles
+│           ├── test-setup.ts     Cleans up after each test
+│           └── *.test.ts(x)      Tests for api.ts, ApiStatus and App
 ├── packages/
 │   └── shared/                   Code shared by API and web (@hospitalos/shared)
 │       └── src/
@@ -102,8 +116,6 @@ What's in the repository right now:
 ├── .npmrc                        engine-strict and save-exact
 └── .gitignore                    Keeps node_modules, build output and .env out of git
 ```
-
-**Still to come:** `apps/web/` (the React web app, next commit).
 
 **How workspaces connect:** npm links each workspace into `node_modules/@hospitalos/`, so the API can `import { ROLE_CODES } from '@hospitalos/shared'` like any other package. The shared package ships TypeScript source directly, so it has no build step.
 
@@ -159,6 +171,9 @@ npm run lint && npm run format:check && npm run typecheck && npm test
 # 6. Run the API and call its health endpoint
 npm run dev:api                      # in one terminal; Ctrl+C stops it
 curl -s 127.0.0.1:3000/health        # in another: {"status":"ok"}
+
+# 7. Run the web app (in a second terminal, with the API still running)
+npm run dev:web                      # then open http://127.0.0.1:5173
 ```
 
 On Linux, use `sed -i` (without `''`) in step 3.
@@ -197,6 +212,39 @@ Invalid environment configuration:
 **Why `app.ts` and `server.ts` are separate:** `createApp()` only builds the app; `server.ts` starts it. Tests use the app directly through `supertest` without opening a network port, and future middleware (security headers, sessions, CSRF) is added in one place.
 
 **Logging:** plain `console` for now. On Day 4 it's replaced by a structured logger (pino) that strips sensitive fields.
+
+---
+
+## Running the web app
+
+Use two terminals: `npm run dev:api` in the first and `npm run dev:web` in the second. Then open **http://127.0.0.1:5173**. The database isn't needed yet.
+
+**What you'll see:** the HospitalOS heading, a synthetic-data notice, and a **System status** card that reads:
+- **Checking API…** while the request is in flight
+- **API online** when the API answered `{"status":"ok"}`
+- **API unreachable** on an error, a timeout (5 seconds) or an unexpected answer
+
+The **Check again** button repeats the check.
+
+**How the browser reaches the API (the Vite proxy):**
+```
+Browser ──GET /api/health──► Vite dev server (127.0.0.1:5173) ──GET /health──► API (127.0.0.1:3000)
+```
+The browser only ever talks to one address, so the API needs **no CORS configuration**. The web app always calls paths starting with `/api/`.
+
+> **Temporary compatibility arrangement:** the API's routes don't have an `/api` prefix yet, so the proxy currently strips `/api` before forwarding (`/api/health` → `/health`). On Day 4 the API will put every route under `/api` and the rewrite will be removed, so development and production use identical paths. See [`docs/roadmap.md`](docs/roadmap.md), Day 4.
+
+**Accessibility:**
+- The status is announced to screen readers (`role="status"`, `aria-live="polite"`) and always written in words, never shown by colour alone.
+- Text and status colours meet WCAG AA contrast.
+- Keyboard focus is clearly visible.
+- Animations are turned off for users who ask for reduced motion.
+
+**Styling:** deliberately minimal CSS in `src/index.css`. Tailwind CSS and shadcn/ui arrive on Day 6 (see [`docs/architecture.md`](docs/architecture.md) §8).
+
+**Security:** the web app reads no environment variables, so it can't leak a secret into the browser bundle. Vite would only read `.env` files inside `apps/web`, and none exist there. Both dev servers listen on `127.0.0.1` only.
+
+**Production build:** `npm run build` writes static files to `apps/web/dist/`, which git ignores. `npm run preview -w @hospitalos/web` serves them at `http://127.0.0.1:4173`. That preview server has no `/api` proxy, so the status card shows "API unreachable" there; this is expected until deployment routing is set up (Day 5).
 
 ---
 
@@ -240,9 +288,10 @@ Run these from the repository root.
 | `npm run format` | Prettier: rewrites files to the project style |
 | `npm run format:check` | Prettier: checks only, changes nothing (used in CI) |
 | `npm run typecheck` | Type-checks every workspace that has a `typecheck` script |
-| `npm test` | Runs all Vitest tests (currently 11, in 3 files). No database is needed. |
+| `npm test` | Runs all Vitest tests (currently 20, in 6 files). Web tests run in a simulated browser (jsdom). No database or running server is needed. |
 | `npm run dev:api` | Starts the API in watch mode at `http://127.0.0.1:3000` |
-| `npm run build` | Builds every workspace that has a `build` script |
+| `npm run dev:web` | Starts the web app at `http://127.0.0.1:5173`, forwarding `/api/*` to the API |
+| `npm run build` | Builds every workspace that has a `build` script; today that's the web app, into `apps/web/dist/` |
 | `npm run db:up` | Starts PostgreSQL and waits until it's healthy |
 | `npm run db:down` | Stops PostgreSQL (keeps data) |
 | `npm run db:psql` | Opens `psql` on `hms_dev` inside the container |
@@ -269,6 +318,18 @@ Run these from the repository root.
 | tsx | 4.23.15 | dev | Runs TypeScript directly, with watch mode |
 | supertest | 7.3.1 | dev | Calls the Express app in tests without a network port |
 | @types/express, @types/node, @types/supertest | 5.0.6, 26.6.5, 7.2.1 | dev | Type definitions |
+
+**Web app dependencies (`apps/web`):**
+| Package | Version | Kind | Purpose |
+|---|---|---|---|
+| react, react-dom | 19.3.1 | runtime | User-interface library |
+| vite | 8.3.4 | dev | Dev server, `/api` proxy and production build. It's the same copy Vitest already uses. |
+| @vitejs/plugin-react | 6.1.2 | dev | JSX and fast refresh for Vite |
+| @testing-library/react, @testing-library/dom | 16.3.3, 10.4.2 | dev | Render components in tests and query them the way users do (by role and text) |
+| jsdom | 30.1.2 | dev | Simulated browser for tests |
+| @types/react, @types/react-dom | 19.3.0 | dev | Type definitions |
+
+**Root linting addition:** `eslint-plugin-react-hooks` 7.1.1, with its recommended rules applied to `apps/web` only. It catches mistakes such as calling hooks conditionally or missing effect dependencies.
 
 `packages/shared` has no dependencies yet.
 
@@ -321,7 +382,6 @@ The full day-by-day plan is in [`docs/roadmap.md`](docs/roadmap.md). The rest of
 
 | Next commit | Adds |
 |---|---|
-| Commit 5 | `apps/web`: minimal Vite + React + TypeScript app |
 | Commit 6 | GitHub Actions CI (lint, format, typecheck, test, build) with the pinned Postgres service |
 
 ---
@@ -336,4 +396,5 @@ The full day-by-day plan is in [`docs/roadmap.md`](docs/roadmap.md). The rest of
 | `ae58fc1` | Root workspace tooling: TypeScript, ESLint, Prettier, Vitest |
 | `3e6d3a1` | Local PostgreSQL 17.11 via Docker Compose, digest-pinned |
 | `0110c51` | README rewritten to document how the project works; kept up to date from now on. Pushed directly to `main` with the Day 3 commits above. |
-| *(commit 4)* | Shared package (role codes) and API skeleton: configuration validation, `GET /health`, 11 tests |
+| `b275c21` | Shared package (role codes) and API skeleton: configuration validation, `GET /health`, 11 tests (merged to `main` as `26311c0`, PR #2) |
+| *(commit 5)* | Minimal React + TypeScript web app: landing screen, API-status indicator, `/api` dev proxy (temporary rewrite), React Hooks lint rules, 9 more tests |
