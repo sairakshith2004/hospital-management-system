@@ -32,6 +32,16 @@ The system never diagnoses patients or recommends treatment. Allergy matching an
 | Q7 | One outpatient pharmacy and one general store, extensible to more. Stock transfers are modelled; building the full transfer workflow is deferred if time is short. |
 | Lab | Laboratory is Tier 2. |
 
+**Approved safeguards (2026-10-14)**
+
+| ID | Safeguard |
+|---|---|
+| S1 | Returned medicines must satisfy documented return, packaging, traceability and storage requirements before restocking. Expired, recalled, opened, improperly stored or otherwise ineligible medicine is never restocked. There's a configurable 7-day return window. Cold-chain items aren't restocked unless an explicitly approved, documented policy establishes that the cold chain stayed intact. |
+| S2 | Nurse permissions follow least privilege and assigned-patient access: administrator-managed session assignments, enforced on the server and audited. |
+| S3 | The 23:30 end-of-day job is idempotent, configurable and safe to rerun. |
+| S4 | Completed clinical notes are immutable. Corrections are appended as audited addenda. |
+| S5 | Tier 3 is deferred whenever core-workflow completion, security or testing is at risk. |
+
 ## 3. Functional requirements by role
 
 - **Receptionist (REC)**
@@ -51,10 +61,10 @@ The system never diagnoses patients or recommends treatment. Allergy matching an
   - Look up medicine availability (read-only).
   - Use emergency access.
 - **Nurse (NUR)**
-  - See their department's queue for today.
-  - Record vitals for a checked-in patient, including before the doctor starts the consultation.
-  - Record allergies and current medications for patients in their department's active queue.
-  - Read the charts of patients currently in their department's active queue.
+  - See and work on patients in the doctor sessions they're assigned to today. An administrator makes the assignments; there's no department-wide access.
+  - Record vitals for a checked-in patient in an assigned session, including before the doctor starts the consultation.
+  - Record allergies and current medications for those patients.
+  - Read those patients' charts.
 - **Pharmacist (PHA)**
   - Work the dispensing queue: check prescriptions and allergies, dispense (including verified substitution), process returns.
   - Adjust stock, with a reason.
@@ -85,6 +95,7 @@ The system never diagnoses patients or recommends treatment. Allergy matching an
   - View aggregate conversion reports.
 - **Hospital administrator (ADM)**
   - Manage settings, schedules, fees and staff accounts (not Super Admin).
+  - Manage nurse session assignments.
   - Approve purchase orders, expenses, discounts and refunds.
   - Review emergency access.
   - Run the end-of-day job manually when needed.
@@ -147,6 +158,7 @@ Each criterion has an ID that tests and the roadmap refer to.
 - **JB-3:** The job closes `issued` or `partially_dispensed` prescriptions older than `prescription_validity_days`.
 - **JB-4:** Running the job twice, or concurrently, produces the same result as running it once. Every transition writes an audit row with `actor_type = system`.
 - **JB-5:** Only users with `day_close:run` can trigger it manually.
+- **JB-6:** With `day_close_enabled = false`, the scheduled run is skipped and logged. A manual run with `day_close:run` still works and stays idempotent.
 
 ### Consultation fees (CF)
 - **CF-1:** Check-in adds the fee from `doctor_fees` (doctor, visit type, effective date). If there isn't one, it uses the department's consultation service price.
@@ -165,12 +177,13 @@ Each criterion has an ID that tests and the roadmap refer to.
   - The grant appears in the review queue.
 - **AX-5:** An expired or revoked grant returns 403.
 - **AX-6:** Emergency access does not permit creating clinical records; attempting to returns 403.
-- **AX-7:** A nurse from another department gets 403.
+- **AX-7:** A nurse without an active assignment for the patient's session gets 403, even within the same department.
 - **AX-8:** Every clinical read writes a `patient.clinical.read` audit row. If that audit write fails, no data is returned.
 - **AX-9:** SA, HR, INV, EQP and MKT get 403 on every patient-data endpoint.
 - **AX-10:** A doctor with many active emergency grants can still obtain another one. Going over `break_glass_alert_threshold` grants in 24 hours marks the grants for priority review, but never blocks access.
 - **AX-11:** Changing the care-window settings changes access decisions immediately, with no code change.
 - **AX-12:** A doctor who ordered a lab test for the patient that was verified within `care_window_after_days` can read the chart. A doctor whose only link is such an order verified outside that window gets 403.
+- **AX-13:** Assigning and revoking nurse assignments requires `nurse_assignment:manage` and is audited. A revoked assignment ends access on the next request. A walk-in outside every session isn't visible to nurses.
 
 ### Consultation (CN)
 - **CN-1:** Vitals, diagnoses and notes are saved. Completing the encounter completes the appointment in the same transaction.
@@ -194,14 +207,19 @@ Each criterion has an ID that tests and the roadmap refer to.
 - **DP-2:** Two concurrent dispenses that together exceed a batch's stock: one succeeds, one gets 409, and stock never goes negative.
 - **DP-3:** Repeating a request with the same idempotency key returns the first result with no second deduction.
 - **DP-4:** Dispensing more than the prescribed quantity is rejected, including when two partial dispenses run at the same time.
-- **DP-5:** Each return creates a `dispensing_returns` row.
-  - It restocks the **original batch** only if the pharmacist confirms the pack is unopened and the batch is active and unexpired. Otherwise no stock movement is written.
+- **DP-5:** A return within `return_window_days` creates a `dispensing_returns` row.
+  - It restocks the **original batch** only if every check passes (unopened, packaging intact, batch verified, storage conditions maintained, pharmacist verified) and the batch is active and unexpired. Otherwise it's recorded with no stock movement.
   - On the billing side, it reduces the draft invoice line, or creates a credit note with `origin = dispense_return` if the invoice is already issued.
 - **DP-6:** Each batch's `qty_on_hand` equals the sum of its movements, checked by a reconciliation query after every stock test.
 - **DP-7:** Running a dispense, a stock adjustment and a return on the same batch at the same time leaves a consistent final quantity and movement history, with no negative stock and no lost updates.
 - **DP-8:** Only users with `prescription:dispense` can dispense. Doctors, nurses and every other role get 403.
 - **DP-9:** Two concurrent returns against one dispensing line can never return more than was dispensed in total.
 - **DP-10:** Only a medicine product can be dispensed against a prescription. A general-store item returns 422, and the database rejects it via the FK to `medicine_products`.
+- **DP-11:** These all get 422, and the service and the database CHECKs both enforce them:
+  - a return after `return_window_days` (`RETURN_WINDOW_EXPIRED`)
+  - a restock where any checklist item fails
+  - a restock into an expired, recalled or quarantined batch
+  - restocking a cold-chain item with no approved policy reference
 
 ### Expiry (EX)
 All expiry checks are enforced by the API, and the tests call the API directly with no UI.

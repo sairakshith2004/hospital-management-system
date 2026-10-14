@@ -45,7 +45,7 @@ In this table:
 | allergy:record (allergies and current medications) | | | | ◐ | ◐⁹ | | | | | | | |
 | history:write (medical history entries) | | | | ◐ | | | | | | | | |
 | schedule:read | | ● | ● | ● | ● | | | | | | | ● |
-| schedule:manage, fee:manage | | ● | | | | | | | | | | |
+| schedule:manage, fee:manage, nurse_assignment:manage | | ● | | | | | | | | | | |
 | appointment:book, appointment:cancel, appointment:check_in, appointment:mark_no_show, followup:schedule | | | ● | | | | | | | | | |
 | queue:read | | ● | ● | ◐ | ◐ | | | | | | | |
 | encounter:write, prescription:create, prescription:cancel, lab_order:create, lab_order:cancel, followup:recommend | | | | ◐ | | | | | | | | |
@@ -91,14 +91,14 @@ Notes:
    - a lab cancellation: `lab_order:cancel`
 
    The note records its `origin`, and the audit row names the actor.
-9. A nurse may record allergies and current medications only for patients covered by the nurse rule in section 3.2. This is the default; recording allergies early at triage improves the dispensing allergy check. Medical history, diagnoses and notes stay doctor-only.
+9. A nurse may record allergies and current medications only for patients covered by the nurse rule in section 3.2 (assigned sessions only). This is the default; recording allergies early at triage improves the dispensing allergy check. Medical history, diagnoses and notes stay doctor-only.
 
 ## 3. Patient-data access policy
 
 | Data tier | Contents | Who can see it |
 |---|---|---|
 | Demographics | MRN, name, age, sex, phone | The roles marked in the matrix. Search returns at most 20 rows and never includes clinical fields. |
-| Clinical | History, allergies, medications, diagnoses, notes, vitals, prescriptions, lab results | A doctor with an active care relationship (3.1); a nurse with today's department link (3.2); a doctor holding a valid emergency grant (section 4, read-only); and PHA or LAB within the limited scope in note 2 |
+| Clinical | History, allergies, medications, diagnoses, notes, vitals, prescriptions, lab results | A doctor with an active care relationship (3.1); a nurse with an active session assignment today (3.2); a doctor holding a valid emergency grant (section 4, read-only); and PHA or LAB within the limited scope in note 2 |
 | Financial | Invoices, payments | REC, FIN, ADM, and PHA within the scope in note 5 |
 
 ### 3.1 A doctor's routine (care-based) access
@@ -118,7 +118,13 @@ There is **no lifetime access**. When every condition has lapsed, routine access
 
 ### 3.2 A nurse's access
 
-A nurse can read a patient's chart while that patient has an appointment today, in status `checked_in` or `in_consultation`, in the nurse's department. Under the same condition, the nurse can record vitals for that visit, and allergies and current medications (note 9).
+A nurse can access a patient only through an **active assignment** for today's doctor session.
+- **Who assigns:** an administrator, with `nurse_assignment:manage`, by creating a row in `nurse_assignments`.
+- **Which patients:** those with an appointment today in an assigned session (matched on `appointments.doctor_schedule_id`), in status `checked_in` or `in_consultation`.
+- **What the nurse can do:** read the chart, record vitals for that visit, and record allergies and current medications (note 9).
+- **Department isn't enough:** belonging to the same department doesn't grant access.
+- **Revocation:** revoking an assignment ends access on the next request.
+- **Audit:** every grant and revocation is audited.
 
 ### 3.3 Everyone else
 
@@ -158,7 +164,7 @@ No other role has access to clinical data.
 
 **Events audited:**
 - `patient.clinical.read` on every clinical read. If the audit write fails, no data is returned.
-- Every create, update or status change on: patients, appointments, encounters, notes, prescriptions, dispensings, stock movements, stock transfers, invoices, discounts, payments, refunds, credit notes, users, roles and settings.
+- Every create, update or status change on: patients, appointments, encounters, notes, prescriptions, dispensings, dispensing returns, stock movements, stock transfers, invoices, discounts, payments, refunds, credit notes, nurse assignments, users, roles and settings.
 - Login success, login failure and lockout.
 - `access.denied`.
 - Every day-close transition, recorded with `actor_type = system`.
@@ -193,3 +199,4 @@ Values of sensitive fields are never stored, and passwords and tokens never appe
   - ADM can't escalate their own privileges or manage SA.
   - SA has no access to patient data.
 - **No patient data:** HR, INV, EQP and MKT have no access to patient data, and MKT sees only aggregate conversion numbers.
+- **Nurses:** no clinical access without an active, administrator-made session assignment.

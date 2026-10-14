@@ -80,7 +80,9 @@ appointment → prescription → prescription items → stock batches (ascending
 
 ## 6. Environment
 
-- Local development uses Docker (Docker Desktop or OrbStack) running `postgres:17` with two databases: `hms_dev` and `hms_test`.
+- Local development uses Docker (Docker Desktop or OrbStack) running `postgres:17.11-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826` with two databases: `hms_dev` and `hms_test`.
+  - That digest is the multi-platform image index (linux/amd64 and linux/arm64/v8). It was checked against the registry and Docker Hub on 2026-10-14.
+  - CI uses the same reference.
 - Secrets live only in `.env`, which git ignores. A committed `.env.example` lists the variable names with no values.
 - Production uses managed hosting and a managed PostgreSQL 17 instance (ADR 0013), confirmed by a Day 5 spike.
 
@@ -96,9 +98,16 @@ Some transitions happen because time passes, not because a user acts. They are h
 
 **How it runs:**
 - **Trigger:** an in-process scheduler (`node-cron`) at `hospital_settings.day_close_time` in the hospital's time zone. Users with `day_close:run` (ADM) can also start it by hand. Both paths call the same service.
+- **On/off switch:** `hospital_settings.day_close_enabled` controls the scheduled run. When it's off, the scheduled run is skipped and logged. A manual run is always allowed.
 - **Single run:** `pg_try_advisory_lock('day_close')` makes sure only one instance runs it at a time, even if the API is scaled out.
 - **Idempotent:** each step selects only records still in the source state, and changes each record in its own short transaction. A rerun or a crash part-way through is safe.
 - **Audit:** every transition writes an audit row with `actor_type = system`.
 - **Not automated:** appointments stuck in `checked_in` or `in_consultation`, and emergency-access expiry. Expiry is computed when access is checked, so it needs no job.
 
 The job is built on Day 9 (step 1) and extended on Day 13 (steps 2 and 3); see the [roadmap](roadmap.md).
+
+## 8. Frontend styling plan
+
+- **What we'll use:** Tailwind CSS for styling, and shadcn/ui for components. shadcn/ui copies component source into the repository, built on accessible Radix primitives, so there's no runtime UI kit to depend on. Theme colours are CSS variables, which leaves room for a dark mode later.
+- **When:** both are installed on **Day 6**, together with the web shell. Day 3's web app is a deliberately unstyled Vite + React + TypeScript skeleton, because nothing before Day 6 needs styling.
+- **Rules:** no other component library. Accessibility comes first: every interactive element is keyboard-reachable and labelled. Visual polish never takes time from the core workflows or from testing.

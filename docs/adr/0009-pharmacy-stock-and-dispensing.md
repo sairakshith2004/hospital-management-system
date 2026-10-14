@@ -30,7 +30,11 @@ Stock must never go negative, even when several people dispense at once. Expired
 - **Authorization.** Only `prescription:dispense` holders can dispense. Doctors can only search stock, never change it. Only medicine products can be dispensed: `dispensing_lines.dispensed_product_id` has an FK to `medicine_products`.
 - **Traceability.** Every movement is referenced by a real FK from its source row (dispensing line, return, goods-receipt line, transfer line). `stock_movements.ref_type` and `ref_id` are informational only.
 - **Returns.** Each return is a row in `dispensing_returns`.
-  - It restocks the original batch only when the pharmacist confirms the pack is unopened and the batch is active and unexpired.
+  - Returns are accepted only within the configurable `return_window_days` (default 7).
+  - A return restocks the original batch only when every documented check passes (unopened, packaging intact, batch verified, storage conditions maintained, pharmacist verified) and the batch is active and unexpired.
+  - Expired, recalled, quarantined, opened, improperly stored or otherwise ineligible medicine is never restocked.
+  - Cold-chain items aren't restocked unless an approved, documented policy (`cold_chain_restock_policy_ref`) confirms the cold chain stayed intact.
+  - Database CHECKs back up these service rules.
   - On billing, it either reduces the draft invoice line or links to a credit-note line, exactly one of the two.
   - Concurrent returns are serialized by locking the dispensing line.
 - **Locations (Q7).** One outpatient pharmacy and one general store are seeded. Stock transfers are modelled with paired `transfer_out` and `transfer_in` movements, and the full workflow is deferred if time is short.

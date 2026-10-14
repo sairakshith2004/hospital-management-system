@@ -15,6 +15,9 @@ erDiagram
   doctor_profiles ||--o{ doctor_fees : charges
   doctor_profiles ||--o{ doctor_schedules : works
   doctor_profiles ||--o{ schedule_exceptions : blocks
+  doctor_schedules ||--o{ nurse_assignments : staffs
+  employees ||--o{ nurse_assignments : "assigned nurse"
+  doctor_schedules |o--o{ appointments : session
   patients ||--o{ allergies : ""
   patients ||--o{ consents : ""
   patients ||--o{ appointments : books
@@ -70,6 +73,7 @@ erDiagram
 
 - Every FK uses `ON DELETE RESTRICT`. The only exceptions are `user_roles` and `role_permissions`, which use `CASCADE`.
 - **Composite FKs keep patient-scoped child rows consistent.** Each parent table has `UQ (id, patient_id)`, and each child references `(parent_id, patient_id)`. This makes it impossible for a child row to belong to a different patient than its parent.
+- Every `patient_id` column used in a composite FK is `NOT NULL`. By default PostgreSQL skips a composite FK check when any of its columns is NULL (`MATCH SIMPLE`). That is intended only for links that are genuinely optional, such as a manual invoice with no appointment or a goods receipt with no PO.
 - Every mutable table has `created_at`, `updated_at`, `created_by` and `updated_by`.
 - Status columns are Postgres enums, or text with a CHECK constraint. Allowed transitions are listed in [`state-machines.md`](state-machines.md).
 
@@ -89,6 +93,7 @@ erDiagram
 | `audit_logs` | bigint id, occurred_at, actor_type (user / system), actor_user_id (null only when actor_type = system), action, entity_type, entity_id, patient_id, break_glass_grant_id, request_id, ip, changes (jsonb), reason | INSERT-only for `hms_app`. IX (entity_type, entity_id); IX (patient_id, occurred_at); IX (actor_user_id, occurred_at); IX (action, occurred_at) |
 | `break_glass_grants` | user_id, patient_id, reason_category, reason_text, granted_at, expires_at, revoked_at, revoked_by, priority_review, reviewed_by, reviewed_at, review_outcome, review_note | CK `expires_at > granted_at`; CK `length(reason_text) >= 20`; CK `reviewed_by IS NULL OR reviewed_by <> user_id`; IX (user_id, patient_id, expires_at); partial IX WHERE `reviewed_at IS NULL` |
 | `idempotency_keys` | user_id, key, endpoint, request_hash, response_status, response_body, created_at | PK (user_id, key) |
+| `nurse_assignments` | nurse_employee_id, doctor_id, doctor_schedule_id, session_date, assigned_by, assigned_at, revoked_at, revoked_by, revoke_reason | FK nurse_employee_id → employees; **composite FK (doctor_schedule_id, doctor_id) → doctor_schedules(id, doctor_id)**; partial UQ (nurse_employee_id, doctor_schedule_id, session_date) WHERE `revoked_at IS NULL`; CK `(revoked_at IS NULL) = (revoked_by IS NULL)`; IX (nurse_employee_id, session_date). Managed by ADM. Assignments are revoked, never deleted, and every change is audited. |
 
 **Defaults in `hospital_settings`** (each can be changed without a code change):
 
@@ -104,6 +109,9 @@ erDiagram
 | `follow_up_grace_days` | 7 | Days after `due_to` before a pending follow-up is marked missed |
 | `prescription_validity_days` | 30 | Days after issue before an undispensed or partly dispensed prescription is closed |
 | `day_close_time` | 23:30 | Local time when the end-of-day job runs (architecture section 7) |
+| `day_close_enabled` | true | Turns the scheduled end-of-day run on or off without a code change |
+| `return_window_days` | 7 | Returns are accepted only within this many days of dispensing |
+| `cold_chain_restock_policy_ref` | null | Reference to an approved, documented cold-chain policy. While it's null, cold-chain returns are never restocked. |
 
 `reason_category` is one of: emergency, covering_colleague, transferred_care, other.
 
@@ -114,11 +122,11 @@ The changes column in `audit_logs` stores field names only; it never stores sens
 | Table | Columns | Constraints and indexes |
 |---|---|---|
 | `doctor_profiles` | employee_id, department_id, specialty, registration_no, default_slot_minutes | UQ employee_id; UQ registration_no |
-| `doctor_fees` | doctor_id, visit_kind (new / follow_up), fee_paise, effective_from, effective_to | CK `fee_paise >= 0`; **EXCLUDE** overlapping `daterange(effective_from, effective_to)` for the same (doctor_id, visit_kind) |
-| `doctor_schedules` | doctor_id, weekday, start_time, end_time, slot_minutes, max_bookings, location_id, valid_from, valid_to | CK `start_time < end_time`; CK `slot_minutes BETWEEN 5 AND 120` |
+| `doctor_fees` | doctor_id, visit_kind (new / follow_up), fee_paise, effective_from, effective_to | CK `fee_paise >= 0`; **EXCLUDE** overlapping `daterange(effective_from, effective_to, '[)')` for the same (doctor_id, visit_kind). The start is included and the end excluded, and a NULL `effective_to` means open-ended, so back-to-back fee periods never overlap. |
+| `doctor_schedules` | doctor_id, weekday, start_time, end_time, slot_minutes, max_bookings, location_id, valid_from, valid_to | UQ (id, doctor_id); CK `start_time < end_time`; CK `slot_minutes BETWEEN 5 AND 120` |
 | `schedule_exceptions` | doctor_id, starts_at, ends_at, kind (leave / blocked), reason | CK `starts_at < ends_at`; IX (doctor_id, starts_at) |
 | `hospital_holidays` | date (PK), name | — |
-| `appointments` | appointment_no, patient_id, doctor_id, department_id, kind (scheduled / walk_in / follow_up), status, visit_date, slot_start, slot_end, token_no, checked_in_at, consult_started_at, completed_at, cancel_reason, rescheduled_from_id, follow_up_id, version | See the list below |
+| `appointments` | appointment_no, patient_id, doctor_id, department_id, doctor_schedule_id, kind (scheduled / walk_in / follow_up), status, visit_date, slot_start, slot_end, token_no, checked_in_at, consult_started_at, completed_at, cancel_reason, rescheduled_from_id, follow_up_id, version | See the list below |
 
 Constraints on `appointments`:
 - UQ appointment_no.
@@ -129,6 +137,10 @@ Constraints on `appointments`:
 - UQ rescheduled_from_id.
 - **Partial UQ follow_up_id** for active statuses.
 - Composite FK (follow_up_id, patient_id) → follow_ups.
+- **Composite FK (doctor_schedule_id, doctor_id) → doctor_schedules(id, doctor_id).**
+  - `doctor_schedule_id` is set at booking. For a walk-in, it's set at check-in to the session that covers the check-in time.
+  - A walk-in outside every session has no session, so no nurse can see it. The doctor and ADM can still manage it.
+  - Nurse access is matched on this column (permissions section 3.2).
 - CK `slot_start < slot_end`.
 - CK `kind = 'walk_in' OR slot_start IS NOT NULL`.
 - IX (visit_date, doctor_id, status).
@@ -171,13 +183,13 @@ Either way, the price is **copied** into the invoice line, so later fee changes 
 | `prescription_items` | prescription_id, medicine_product_id, dose, frequency, route, duration_days, qty_prescribed, qty_dispensed, substitution_allowed, allergy_ack_by | UQ (id, prescription_id); CK `qty_prescribed > 0`; **CK `qty_dispensed BETWEEN 0 AND qty_prescribed`** |
 | `ingredients` | name (citext), synonyms | UQ name; trigram IX |
 | `stock_items` | sku, kind (medicine / general), name, base_unit, category, reorder_level, tracks_expiry | UQ sku |
-| `medicine_products` | stock_item_id (PK and FK), brand_name, manufacturer, dosage_form, route, pack_size, rx_only, equivalence_key | trigram IX brand_name; IX equivalence_key |
+| `medicine_products` | stock_item_id (PK and FK), brand_name, manufacturer, dosage_form, route, pack_size, rx_only, requires_cold_chain (default false), equivalence_key | trigram IX brand_name; IX equivalence_key |
 | `product_ingredients` | product_id, ingredient_id, strength_value (numeric), strength_unit | PK (product_id, ingredient_id); CK `strength_value > 0` |
 | `stock_batches` | stock_item_id, location_id, batch_no, expiry_date, unit_cost_paise, sale_price_paise, qty_on_hand, status (active / quarantined / recalled) | **CK `qty_on_hand >= 0`**; UQ (stock_item_id, location_id, batch_no); **UQ (id, stock_item_id)**; IX (stock_item_id, location_id, expiry_date) |
 | `stock_movements` | bigint id, batch_id, kind, qty (signed), balance_after, reason, ref_type, ref_id, performed_by, occurred_at | Append-only; CK `qty <> 0`; CK `balance_after >= 0`; IX (batch_id, occurred_at); IX (ref_type, ref_id) |
 | `dispensings` | dispense_no, prescription_id, patient_id, location_id, idempotency_key, allergy_check_ack, dispensed_by, dispensed_at, status | UQ (id, prescription_id); composite FK (prescription_id, patient_id) → prescriptions; UQ idempotency_key |
 | `dispensing_lines` | dispensing_id, prescription_id, prescription_item_id, batch_id, dispensed_product_id, qty, qty_returned, unit_price_paise, is_substitution, substitution_verified_by, substitution_note, near_expiry_ack, stock_movement_id | See the list below |
-| `dispensing_returns` | return_no, dispensing_line_id, qty, reason, restocked, stock_movement_id, invoice_item_id, credit_note_line_id, returned_by, returned_at | See the list below |
+| `dispensing_returns` | return_no, dispensing_line_id, qty, reason, restocked, unopened, packaging_intact, batch_verified, storage_conditions_ok, cold_chain_item, cold_chain_policy_ref, restock_verified_by, stock_movement_id, invoice_item_id, credit_note_line_id, returned_by, returned_at | See the list below |
 | `stock_transfers` (Tier 2) | transfer_no, from_location_id, to_location_id, status (draft / dispatched / received / cancelled), created_by, received_by | CK `from_location_id <> to_location_id` |
 | `stock_transfer_lines` (Tier 2) | transfer_id, from_batch_id, to_batch_id, qty, out_movement_id, in_movement_id | CK `qty > 0`; FK from_batch_id and to_batch_id → stock_batches; FK out_movement_id and in_movement_id → stock_movements (each UQ) |
 
@@ -210,12 +222,22 @@ Constraints on `dispensing_returns`:
 - FK dispensing_line_id → dispensing_lines.
 - CK `qty > 0`.
 - CK `restocked = (stock_movement_id IS NOT NULL)`.
+- **CK `NOT restocked OR (unopened AND packaging_intact AND batch_verified AND storage_conditions_ok AND restock_verified_by IS NOT NULL)`.**
+- **CK `NOT (restocked AND cold_chain_item) OR cold_chain_policy_ref IS NOT NULL`.**
 - **CK `num_nonnulls(invoice_item_id, credit_note_line_id) = 1`.** A return either reduces a draft invoice line or is credited on an issued invoice.
 - FK stock_movement_id → stock_movements, UQ.
 - FK credit_note_line_id → credit_note_lines, UQ.
 - FK invoice_item_id → invoice_items.
 
-**Restock rule (default):** returned medicine goes back into the **original batch** (`dispense_return` movement) only when the pharmacist confirms it's unopened and the batch is still `active` and unexpired. Otherwise the return is recorded with `restocked = false`, for billing and audit, and no stock movement is written. The pack is disposed of outside the system.
+**Restock rule:**
+- **Return window:** returns are accepted only within `return_window_days` of dispensing. Later returns get 422 `RETURN_WINDOW_EXPIRED`.
+- **When stock goes back:** a return is restocked into the **original batch** (`dispense_return` movement) only if:
+  - every check passes: unopened, packaging intact, batch number matches, storage conditions maintained, verified by a pharmacist
+  - and the batch is `active` and unexpired.
+- **Never restocked:** expired, recalled, quarantined, opened, improperly stored or otherwise ineligible medicine.
+- **Cold-chain items:** not restocked unless `hospital_settings.cold_chain_restock_policy_ref` points to an approved, documented policy confirming the cold chain stayed intact. That reference is copied onto the return.
+- **Returns that aren't restocked** are still recorded, for billing and audit, with `restocked = false` and no stock movement. The pack is disposed of outside the system.
+- **Enforcement:** the service enforces all of this, and the CHECK constraints above enforce it in the database too.
 
 ### 3.6 Billing
 

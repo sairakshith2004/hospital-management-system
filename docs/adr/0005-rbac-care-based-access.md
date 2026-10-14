@@ -14,7 +14,7 @@ Role checks alone would let any doctor read any patient's chart. The project own
      - an encounter that is in progress or was completed within `care_window_after_days` (default 90)
      - a pending or booked follow-up that targets the doctor
      - a lab order they placed that was verified inside the window
-   - **Nurses:** the patient is in the nurse's department's active queue today.
+   - **Nurses:** an active, administrator-managed **session assignment** (`nurse_assignments`) for today's doctor session that the patient is checked in to. Enforced on the server, and every assignment change is audited.
    - **Pharmacists and lab staff:** limited to the clinical details of their own work items.
 3. **The windows are configurable** in `hospital_settings`, with no code change.
 4. **Emergency (break-glass) access:**
@@ -28,6 +28,7 @@ Role checks alone would let any doctor read any patient's chart. The project own
 ## Alternatives considered
 - **Role-only checks.** Too broad for medical records.
 - **Lifetime access after any encounter.** Rejected by the project owner.
+- **Department-wide nurse access.** Rejected for least privilege. A nurse sees only patients in the sessions they're assigned to.
 - **A hard cap on active emergency grants.** Rejected, because it could block necessary emergency care.
 - **Emergency access that allows writing.** Rejected for the MVP. Treatment requires registering a visit, which creates a routine care relationship and a proper encounter record.
 
