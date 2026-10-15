@@ -36,18 +36,18 @@ This README is updated with every change, so it always describes how the project
 | Day 2: architecture design (requirements, ERD, permissions, state machines, ADRs, roadmap) | ✅ Done, merged to `main` (PR #1) |
 | Day 3: project foundation | 🚧 Mostly done, merged to `main` (PRs #2 and #3). CI is still to come. |
 | Scope alignment (C1–C4) | ✅ Done, merged to `main` (PR #4) |
-| Day 4: database schema and migrations | 🚧 In progress on `phase/day-04-database`. Step 1 (role reconciliation) is committed. Step 2a (database tooling: packages, role and migration scripts, environment checks) is written and checked locally. Step 2b (role setup) is done: `hms_owner` and `hms_app` exist on `hms_dev` and `hms_test` with the documented privileges, and `PUBLIC` access to both databases is removed. Next: Step 3, schema and first migrations. |
+| Day 4: database schema and migrations | 🚧 In progress on `phase/day-04-database`. Step 1 (role reconciliation) is committed. Step 2a (database tooling: packages, role and migration scripts, environment checks) is written and checked locally. Step 2b (role setup) is done: `hms_owner` and `hms_app` exist on `hms_dev` and `hms_test` with the documented privileges, and `PUBLIC` access to both databases is removed. Step 3 (schema and first migrations) is applied to `hms_dev` and `hms_test`: nine identity, settings and audit tables, triggers, and exact `hms_app` grants. Next: Step 4, seed data and database tests. |
 
 **What exists today:**
 - Design documentation in `docs/`.
 - Root tooling: npm workspaces, TypeScript, ESLint, Prettier and Vitest.
 - A local PostgreSQL 17.11 database running in Docker.
 - `packages/shared`: role codes shared by API and web. `ROLE_CODES` lists the 11 approved roles (equipment is an INV permission group, not a role).
-- `apps/api`: an Express API skeleton with configuration validation and a `GET /health` endpoint (no database access yet), plus database tooling in `src/db/`: environment checks, a role bootstrap script and a migration runner. No tables or migrations exist yet.
+- `apps/api`: an Express API skeleton with configuration validation and a `GET /health` endpoint (no database access yet), plus database tooling in `src/db/`: environment checks, a role bootstrap script and a migration runner, plus the Drizzle schema and the first two migrations (nine tables, applied to `hms_dev` and `hms_test`; no data yet).
 - `apps/web`: a minimal React + TypeScript web app (Vite) with a HospitalOS landing screen and a live API-status indicator.
-- 37 automated tests.
+- 59 automated tests.
 
-**What doesn't exist yet:** database tables and migrations, authentication, patient features, styling with Tailwind CSS and shadcn/ui (Day 6), and CI. See the [Roadmap](#roadmap).
+**What doesn't exist yet:** seed data and database tests (Step 4), authentication, patient features, styling with Tailwind CSS and shadcn/ui (Day 6), and CI. See the [Roadmap](#roadmap).
 
 ---
 
@@ -57,7 +57,7 @@ This README is updated with every change, so it always describes how the project
 |---|---|
 | Frontend | React, TypeScript, Vite. Tailwind CSS and shadcn/ui are added on Day 6. |
 | Backend | Node.js 24, TypeScript, Express, Zod validation |
-| Database | PostgreSQL 17.11 with Drizzle ORM 0.45.3 and node-postgres (`pg`). Tooling is installed; the first migrations come in Day 4 Step 3. |
+| Database | PostgreSQL 17.11 with Drizzle ORM 0.45.3 and node-postgres (`pg`). Forward-only migrations in `apps/api/src/db/migrations/`. |
 | Testing | Vitest. Playwright for end-to-end tests if time allows. |
 | Tooling | npm workspaces, ESLint, Prettier, Docker Compose, GitHub Actions (CI is added on Day 3) |
 
@@ -77,6 +77,7 @@ What's in the repository right now:
 │   ├── api/                      Express API (@hospitalos/api)
 │   │   ├── package.json          Scripts: dev, start, typecheck, db:*
 │   │   ├── tsconfig.json         Node ESM settings (NodeNext)
+│   │   ├── drizzle.config.ts     drizzle-kit settings for `npm run db:generate` (offline; no credentials)
 │   │   └── src/
 │   │       ├── server.ts         Entry point: validate config → start listening → shut down cleanly
 │   │       ├── app.ts            createApp(): builds the Express app and its routes
@@ -87,6 +88,11 @@ What's in the repository right now:
 │   │       │   ├── roles-sql.ts      The only SQL db:roles runs (create/alter roles, CONNECT and schema grants)
 │   │       │   ├── bootstrap-roles.ts  npm run db:roles: creates hms_owner and hms_app (local only)
 │   │       │   ├── migrate.ts        npm run db:migrate[:test]: applies migrations as hms_owner
+│   │       │   ├── schema/           Drizzle tables: identity.ts, settings.ts, audit.ts, columns.ts (shared helpers)
+│   │       │   ├── migrations/       0000 (generated tables) and 0001 (hand-written triggers and grants),
+│   │       │   │                     checksums.json, and meta/ (drizzle-kit's journal and snapshots)
+│   │       │   ├── schema.test.ts    Table list, ON DELETE rules, audit columns
+│   │       │   ├── migrations.test.ts  Journal order, checksums, forbidden-SQL guard
 │   │       │   └── *.test.ts         Guard tests: wrong targets rejected, no secrets in output, no destructive SQL
 │   │       └── config/
 │   │           ├── env.ts        Zod schema for environment variables; loadEnv()
@@ -119,7 +125,7 @@ What's in the repository right now:
 ├── tsconfig.base.json            Shared strict TypeScript settings
 ├── eslint.config.js              ESLint flat config (TypeScript + Prettier compatibility)
 ├── .prettierrc.json              Prettier formatting rules
-├── .prettierignore               Prettier never reformats docs/ or this README
+├── .prettierignore               Prettier never reformats docs/, this README or drizzle-kit's generated `migrations/meta/`
 ├── .editorconfig                 Editor defaults (UTF-8, LF, 2-space indent)
 ├── .nvmrc                        Node version (24)
 ├── .npmrc                        engine-strict and save-exact
@@ -312,7 +318,37 @@ Each job uses its own PostgreSQL role, so development, test, migration and appli
 **Migration rules:**
 - Migrations live in `apps/api/src/db/migrations/` and are **forward-only**. Never edit or delete a migration that has been applied; write a new one.
 - `drizzle-kit push` and `drizzle-kit drop` are never used.
-- `db:migrate` applies all pending migrations in one transaction as `hms_owner`, records them in `drizzle.__drizzle_migrations`, and holds a PostgreSQL advisory lock so two runs can't overlap. With no migrations yet it prints "No migrations yet".
+- `db:migrate` applies all pending migrations in one transaction as `hms_owner`, records them in `drizzle.__drizzle_migrations`, and holds a PostgreSQL advisory lock so two runs can't overlap. It prints only the target (`role@host:port/database`) and how many migrations were applied.
+
+### Database schema (Day 4)
+
+Nine tables, created by migration `0000` and owned by `hms_owner`:
+
+| Table | Holds |
+|---|---|
+| `hospital_settings` | One row of configurable policy (care windows, discount limit, day-close time…) |
+| `departments`, `employees` | Organisation; every staff member is an employee (`full_name`; status `active`, `on_leave` or `exited`) |
+| `users` | At most one login per employee (`username` is case-insensitive; status `active` or `disabled`; lockout via `failed_logins` and `locked_until`) |
+| `roles`, `permissions`, `user_roles`, `role_permissions` | Role-based access: a user's permissions are the union of their roles' permissions |
+| `audit_logs` | Append-only record of sensitive actions |
+
+Every foreign key is `ON DELETE RESTRICT`, except the four assignment keys in `user_roles` and `role_permissions`, which cascade. Nothing else is ever deleted.
+
+**`hms_app` privileges** (migration `0001`): SELECT, INSERT and UPDATE on departments, employees, users and roles; SELECT and UPDATE on `hospital_settings`; SELECT on `permissions`; SELECT, INSERT and DELETE on `user_roles` and `role_permissions` (revoking an assignment deletes its row); SELECT and INSERT on `audit_logs`. No TRUNCATE, REFERENCES or TRIGGER anywhere, and future tables get nothing until a migration grants it.
+
+**How `audit_logs` stays append-only:**
+1. `hms_app` has no UPDATE, DELETE or TRUNCATE privilege on it.
+2. Triggers reject UPDATE, DELETE and TRUNCATE for every role, including the owner.
+3. `hms_app` doesn't own the table, so it can't disable the triggers or alter the table.
+4. No migration may contain `DISABLE TRIGGER`, `session_replication_role` or `DROP` (enforced by a test).
+
+Limits: the table owner (`hms_owner`, used only for reviewed migrations) or a superuser could still deliberately remove the protection. `audit_logs.id` is generated by PostgreSQL; the audit library never supplies it, although PostgreSQL would accept `OVERRIDING SYSTEM VALUE` from any role with INSERT.
+
+**Adding a migration:**
+1. Change the schema in `apps/api/src/db/schema/`, then run `npm run db:generate -- --name=<short_name>`. It works offline and writes the next numbered SQL file. For hand-written SQL (triggers, grants), use `npm run db:generate -- --custom --name=<short_name>` and fill in the empty file.
+2. Review the SQL. `npm test` rejects destructive or privilege-widening statements.
+3. Add the file's SHA-256 to `migrations/checksums.json` (`shasum -a 256 <file>`). `npm test` fails until you do, and fails again if an existing migration is ever edited.
+4. Apply it with `npm run db:migrate`, then `npm run db:migrate:test`.
 
 **Preflight before `npm run db:roles`:** make sure the only thing listening on `127.0.0.1:5432` is this project's Docker container, so the role setup can't reach a different PostgreSQL. Neither command connects to the database.
 ```bash
@@ -334,7 +370,7 @@ Run these from the repository root.
 | `npm run format` | Prettier: rewrites files to the project style |
 | `npm run format:check` | Prettier: checks only, changes nothing (used in CI) |
 | `npm run typecheck` | Type-checks every workspace that has a `typecheck` script |
-| `npm test` | Runs all Vitest tests (currently 37, in 8 files). Web tests run in a simulated browser (jsdom). No database or running server is needed. |
+| `npm test` | Runs all Vitest tests (currently 59, in 10 files). Web tests run in a simulated browser (jsdom). No database or running server is needed. |
 | `npm run dev:api` | Starts the API in watch mode at `http://127.0.0.1:3000` |
 | `npm run dev:web` | Starts the web app at `http://127.0.0.1:5173`, forwarding `/api/*` to the API |
 | `npm run build` | Builds every workspace that has a `build` script; today that's the web app, into `apps/web/dist/` |
@@ -345,6 +381,7 @@ Run these from the repository root.
 | `npm run db:roles` | Creates or updates the `hms_owner` and `hms_app` roles, removes the default `PUBLIC` access to `hms_dev`/`hms_test`, and grants the two roles their connect/schema access. Local only; safe to re-run. Run the preflight check in "Database roles" first. |
 | `npm run db:migrate` | Applies pending migrations to `hms_dev` as `hms_owner` |
 | `npm run db:migrate:test` | Applies pending migrations to `hms_test` as `hms_owner` |
+| `npm run db:generate` | Generates the next migration from the schema (offline; never connects). Add `-- --custom --name=…` for hand-written SQL |
 
 ---
 
@@ -455,4 +492,5 @@ The full day-by-day plan is in [`docs/roadmap.md`](docs/roadmap.md). The rest of
 | `10915fd` | Minimal React + TypeScript web app: landing screen, API-status indicator, `/api` dev proxy (temporary rewrite), React Hooks lint rules, 9 more tests (merged to `main` as `8850ce4`, PR #3) |
 | `61d30d2` | Scope clarifications C1 to C4: separate stock permissions per operation and location (pharmacy and store adjustments, supplier goods receipts, transfer receipts, dispensing); only Super Admin assigns roles and nobody changes their own; system and security settings split from operational settings; audit viewer limits and immutability. Also: exactly 11 roles (equipment and maintenance becomes an INV permission group), source-based transfer dispatch with explicit acceptance or rejection by a different user and audited returns, the no-role onboarding rule, and a Day 7 rebalance. Documentation only; adds acceptance criteria ST-1 to ST-12 and AD-1 to AD-8, and a test-milestone table in the roadmap (merged to `main` as `17674f6`, PR #4). |
 | `2e2ab29` *(on `phase/day-04-database`, not pushed)* | Day 4 Step 1: `ROLE_CODES` reconciled to the 11 approved roles (`EQP` removed); its test now checks the exact list. |
-| *(pending, `phase/day-04-database`)* | Day 4 Step 2a: drizzle-orm, pg and drizzle-kit installed; database URL guards, `db:env:check`, `db:roles` and `db:migrate` scripts with separate superuser, owner and application roles; `.env.example` with the five database URLs; 17 more tests. Step 2b: role setup hardened (PUBLIC `CONNECT`/`TEMPORARY` removed on both databases, password-safe error handling, superuser check first), local `.env` updated, and `db:roles` run: roles created and verified. |
+| `4acbfde` *(on `phase/day-04-database`, not pushed)* | Day 4 Step 2a: drizzle-orm, pg and drizzle-kit installed; database URL guards, `db:env:check`, `db:roles` and `db:migrate` scripts with separate superuser, owner and application roles; `.env.example` with the five database URLs; 17 more tests. Step 2b: role setup hardened (PUBLIC `CONNECT`/`TEMPORARY` removed on both databases, password-safe error handling, superuser check first), local `.env` updated, and `db:roles` run: roles created and verified. |
+| *(pending, `phase/day-04-database`)* | Day 4 Step 3: Drizzle schema for nine identity, settings and audit tables; migration `0000` (generated) and `0001` (hand-written `updated_at` and append-only audit triggers, and exact `hms_app` grants), applied to `hms_dev` and `hms_test`; migration checksums and a forbidden-SQL guard (including `DISABLE TRIGGER` and `session_replication_role`); `npm run db:generate`; 22 more tests. |
