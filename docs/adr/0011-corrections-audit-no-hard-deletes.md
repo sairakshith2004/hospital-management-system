@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-10-14
+- **Amended:** 2026-10-15 (scope clarifications C2, C4)
 
 ## Context
 Clinical and financial records must keep their history. Sensitive access and changes must be attributable to a person. Deleting rows to fix mistakes destroys evidence.
@@ -10,6 +11,7 @@ Clinical and financial records must keep their history. Sensitive access and cha
 - **Corrections are always new records:** void, reversal, credit note, amended lab result, or clinical-note addendum.
 - **Foreign keys** use `ON DELETE RESTRICT`. Only pure join tables cascade.
 - **Append-only tables:** `stock_movements` and `audit_logs`, protected by triggers.
+- **The audit log is read-only for everyone.** SA and ADM hold `audit:read`, but there is no permission or API route to edit or delete audit rows, and the trigger blocks UPDATE and DELETE regardless of who asks. Searches of the audit log are themselves audited (`audit_log.searched`).
 - **Clinical notes and diagnoses** can be edited only while their encounter is `in_progress`, and every edit is audited. Once the encounter is completed, a trigger blocks edits and corrections become addenda.
 - **Vital signs** are never edited. A correction is a new reading, plus `entered_in_error = true` on the wrong one.
 - **Database grants:** `hms_app` has no DELETE on clinical, financial or audit tables, and INSERT-only on `audit_logs`.

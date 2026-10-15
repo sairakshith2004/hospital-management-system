@@ -83,13 +83,47 @@ Each return is a `dispensing_returns` row, and the dispensing's status is derive
 
 ```mermaid
 stateDiagram-v2
-  [*] --> draft: INV
-  draft --> dispatched: INV, transfer_out movements
-  draft --> cancelled: INV
-  dispatched --> received: receiving location, transfer_in movements
+  [*] --> draft: source dispatch permission, reason required
+  draft --> cancelled: source dispatch permission, reason, no stock moved
+  draft --> dispatched: source dispatch permission, transfer_out from source batches
+  dispatched --> received: destination receive permission, not the dispatcher, transfer_in into destination batches
+  dispatched --> rejected: destination receive permission, not the dispatcher, reason, no stock moved
+  rejected --> returned: source receive permission, not the dispatcher or rejecter, transfer_return into original source batches
+  received --> [*]
+  returned --> [*]
+  cancelled --> [*]
 ```
 
-If time is short, the MVP may skip the dispatched step and do the transfer in a single transaction (`draft → received`). The full workflow is deferred.
+The permissions, by location kind:
+
+| Step | Pharmacy | General store |
+|---|---|---|
+| Create, dispatch or cancel (source) | `stock_transfer:dispatch_pharmacy` (PHA) | `stock_transfer:dispatch_store` (INV) |
+| Accept or reject (destination) | `stock_transfer:receive_pharmacy` (PHA) | `stock_transfer:receive_store` (INV) |
+| Accept a returned transfer (source) | `stock_transfer:receive_pharmacy` (PHA) | `stock_transfer:receive_store` (INV) |
+
+**Where the stock is in each state.** "In transit" is the line quantity of every `dispatched` or `rejected` transfer. It counts at neither location and is shown in its own in-transit report.
+
+| State | Source batches | In transit | Destination batches |
+|---|---|---|---|
+| `draft` | unchanged | 0 | unchanged |
+| `cancelled` | unchanged | 0 | unchanged |
+| `dispatched` | reduced by the line qty (`transfer_out`) | line qty | unchanged |
+| `received` | reduced | 0 | increased by the line qty (`transfer_in`) |
+| `rejected` | reduced | line qty, on its way back | unchanged |
+| `returned` | restored by the line qty (`transfer_return` into the **original** batch) | 0 | unchanged |
+
+**Rules that keep stock from being created, lost or duplicated:**
+- **Separate users.** The dispatcher never accepts, rejects or records the return of their own transfer. Acceptance and rejection at the destination are done by a different user from the dispatcher. The return receipt at the source is recorded by a different authorized user from **both** the dispatcher and the rejecter. The service returns 403 and the database CHECKs back it up.
+- **History is kept.** Transfers and their lines are never deleted. Rejected, returned and cancelled transfers keep their full record: source, destination, batches, quantities, actors, times, rejection reason and final status.
+- **Whole transfers only.** The destination accepts or rejects the whole transfer. A short or damaged delivery is rejected and returned, then re-sent as a new transfer.
+- **Rejection moves no stock.** The goods stay in transit until the source accepts them back. A dispatched transfer can't be cancelled; it can only be accepted, or rejected and returned.
+- **Returns go back to the original batch**, whatever that batch's status is now. If the batch was recalled or expired in transit, it keeps that status and isn't sellable; disposal is a separate, audited adjustment.
+- **Acceptance re-checks the source batch.** If it's now recalled, quarantined or expired, acceptance returns 422 and the receiver rejects the transfer instead.
+- **One transition at a time.** Each transition locks the transfer row, checks the expected status (409 otherwise), then locks the batches in ascending id order. A second acceptance, an acceptance racing a rejection, or a second return gets 409, and the unique movement FKs stop any line from moving twice.
+- **Conservation.** Per line, the `transfer_out` quantity equals the `transfer_in` or `transfer_return` quantity, never both. The transfer reconciliation test checks this, along with DP-6 (ST-12).
+- **Audit.** Dispatch, acceptance, rejection, return and cancellation each write their own audit row: `stock_transfer.dispatched`, `.received`, `.rejected`, `.returned` and `.cancelled`.
+- **No single-step shortcut.** If time is short, transfers are deferred rather than simplified. **Every rule in this section, and ST-7 and ST-9 to ST-12, stays binding for whichever phase implements transfers.**
 
 ## 6. Invoice
 

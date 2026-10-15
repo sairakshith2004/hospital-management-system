@@ -4,7 +4,7 @@ Status: approved design, Day 2 (2026-10-14).
 
 ## 1. Context
 
-HospitalOS serves one multispecialty hospital, **outpatient-only**, with 12 staff roles.
+HospitalOS serves one multispecialty hospital, **outpatient-only**, with 11 staff roles.
 
 This is a **synthetic-data demonstration**. It has not been assessed against India's DPDP Act and Rules or clinical-records requirements, and must not hold real patient data without qualified legal, clinical and security review.
 
@@ -42,6 +42,17 @@ The system never diagnoses patients or recommends treatment. Allergy matching an
 | S4 | Completed clinical notes are immutable. Corrections are appended as audited addenda. |
 | S5 | Tier 3 is deferred whenever core-workflow completion, security or testing is at risk. |
 
+**Approved scope clarifications (2026-10-15)**
+
+| ID | Clarification |
+|---|---|
+| C1 | **Stock operations.** Dispensing, pharmacy stock adjustments, general-store stock adjustments, supplier goods receipts and transfer receipts are separate operations, each with its own server-enforced permission checked against the location kind. Transfers are authorized by operation and by source or destination location: pharmacists dispatch from a pharmacy and Inventory / Procurement Managers dispatch from the general store, and the receiving location must explicitly accept or reject every transfer, always by a different user from the dispatcher. A rejected transfer returns to its original source batches through an audited return, so stock is never created, lost or duplicated. Pharmacists dispense, manage pharmacy stock, and accept transfers into a pharmacy only through an explicit transfer-receipt permission. Inventory / Procurement Managers handle supplier purchase-order receipts and goods receipts into the general store, and general-store stock. Every adjustment records the actor, timestamp, reason, batch, location and quantity change. |
+| C2 | **Role management.** Only Super Admin assigns users' roles and changes role permissions; Hospital Administrators don't hold `role:manage`. A new account has no access to protected functions until Super Admin assigns a role. No user, including Super Admin, can change their own role assignments or grant themselves permissions. Role and other sensitive permission changes need a justification, and the audit row records the actor, target user, action, reason and the role or permission involved. Operational permissions are kept separate from system administration. |
+| C3 | **Settings.** System-wide and security-sensitive settings (Super Admin) are separate from explicitly authorized operational settings (Hospital Administrator). There's no general-purpose settings permission. The server enforces the split on every change, and every change is audited. |
+| C4 | **Audit viewer.** Authorized audit viewers see patient identifiers (including MRN where needed) and relevant audit metadata, but no clinical note contents or unnecessary patient details. Audit-log searches are recorded without creating recursive audit events. Audit records can't be altered or deleted, and sensitive access and administrative changes are audited. |
+
+The project has exactly 11 roles (listed in [`permissions.md`](permissions.md) section 1). This is the approved product role model. The existing code's role list (12 entries) hasn't been reconciled yet; that's scheduled for the start of Day 4, before role seeding or enforcement is implemented. Equipment and maintenance is a permission group held by the Inventory / Procurement Manager, not a separate role. These clarifications add granular permissions, not roles.
+
 ## 3. Functional requirements by role
 
 - **Receptionist (REC)**
@@ -67,9 +78,9 @@ The system never diagnoses patients or recommends treatment. Allergy matching an
   - Read those patients' charts.
 - **Pharmacist (PHA)**
   - Work the dispensing queue: check prescriptions and allergies, dispense (including verified substitution), process returns.
-  - Adjust stock, with a reason.
+  - Manage pharmacy stock: adjust stock in pharmacy locations only, with a reason (C1).
   - Manage the medicine catalogue and batches.
-  - Receive goods into the pharmacy.
+  - Dispatch authorized transfers out of the pharmacy, and explicitly accept transfers into it (C1). Supplier goods receipts are INV's.
   - Issue pharmacy invoices and record payments.
 - **Laboratory technician (LAB)**
   - Work the order list.
@@ -85,24 +96,27 @@ The system never diagnoses patients or recommends treatment. Allergy matching an
   - Manage employees, attendance, shifts and leave approvals.
   - Keep manual payroll records.
 - **Inventory (INV)**
-  - Manage suppliers, purchase orders and goods receipts.
+  - Manage suppliers and purchase orders, and receive supplier goods into the general store (C1).
   - Maintain the catalogue.
-  - Make stock adjustments and transfers.
-- **Equipment (EQP)**
-  - Maintain the equipment register, maintenance schedules and logs, and downtime.
+  - Manage general-store inventory, including stock adjustments in general-store locations (C1).
+  - Dispatch authorized transfers out of the general store, and explicitly accept transfers into it (C1).
+  - Maintain the equipment register, maintenance schedules and logs, and downtime (the equipment permission group).
 - **Marketing (MKT)**
   - Manage enquiries, campaigns, referral sources and consent records.
   - View aggregate conversion reports.
 - **Hospital administrator (ADM)**
-  - Manage settings, schedules, fees and staff accounts (not Super Admin).
+  - Manage departments, schedules, fees and the allowlisted operational settings (C3).
+  - Create, deactivate and reset passwords for staff accounts (not Super Admin accounts). Can't assign roles or change role permissions (C2); a new account waits for Super Admin to assign its role.
   - Manage nurse session assignments.
   - Approve purchase orders, expenses, discounts and refunds.
   - Review emergency access.
   - Run the end-of-day job manually when needed.
   - Read the audit log and run operational reports.
 - **Super Admin (SA)**
-  - Manage system users and roles, settings and the audit log.
-  - **Has no access to patient data.**
+  - View and manage users, assign users' roles, and manage role permissions (C2), never for their own account or roles they hold.
+  - Manage system-wide and security settings (C3).
+  - Read the audit log, with patient identifiers but no clinical content (C4). **Can't alter or delete it**; no role can.
+  - **Has no access to patient data.** Operational work (dispensing, billing, stock, scheduling, operational settings) isn't part of the role.
 
 ## 4. Scope tiers
 
@@ -179,7 +193,7 @@ Each criterion has an ID that tests and the roadmap refer to.
 - **AX-6:** Emergency access does not permit creating clinical records; attempting to returns 403.
 - **AX-7:** A nurse without an active assignment for the patient's session gets 403, even within the same department.
 - **AX-8:** Every clinical read writes a `patient.clinical.read` audit row. If that audit write fails, no data is returned.
-- **AX-9:** SA, HR, INV, EQP and MKT get 403 on every patient-data endpoint.
+- **AX-9:** SA, HR, INV and MKT get 403 on every patient-data endpoint.
 - **AX-10:** A doctor with many active emergency grants can still obtain another one. Going over `break_glass_alert_threshold` grants in 24 hours marks the grants for priority review, but never blocks access.
 - **AX-11:** Changing the care-window settings changes access decisions immediately, with no code change.
 - **AX-12:** A doctor who ordered a lab test for the patient that was verified within `care_window_after_days` can read the chart. A doctor whose only link is such an order verified outside that window gets 403.
@@ -220,6 +234,21 @@ Each criterion has an ID that tests and the roadmap refer to.
   - a restock where any checklist item fails
   - a restock into an expired, recalled or quarantined batch
   - restocking a cold-chain item with no approved policy reference
+
+### Stock control (ST)
+Stock adjustments are the movement kinds `adjustment_in`, `adjustment_out`, `damage` and `expiry_writeoff`. ST-7 and ST-9 to ST-12 cover transfers. If transfers are deferred from the MVP, these criteria stay binding for the phase that implements them. The permissions and location kinds are listed in [`permissions.md`](permissions.md) note 3.
+- **ST-1:** A user with `stock:adjust_pharmacy` (PHA) can adjust a batch in a pharmacy location. The same user adjusting a batch in a store location gets 403, and an `access.denied` audit row is written.
+- **ST-2:** A user with `stock:adjust_store` (INV) can adjust a batch in a store location. The same user adjusting a batch in a pharmacy location gets 403, and an `access.denied` audit row is written.
+- **ST-3:** Every adjustment stores the actor, timestamp, reason, location, batch and signed quantity change on its stock movement. A request without a reason returns 422, and the database rejects an adjustment movement with no reason or with a location that doesn't match its batch.
+- **ST-4:** An adjustment and its `stock.adjusted` audit row are written in the same transaction. The audit row names the actor, batch, location and reason. A rejected or rolled-back adjustment leaves no movement and no audit row for the change.
+- **ST-5:** An adjustment that would take a batch below zero returns 409, and the batch is unchanged.
+- **ST-6:** A supplier goods receipt needs `goods_receipt:create` (INV); PHA and every other role get 403. A goods receipt into a pharmacy location is rejected with 422 by the service and by the database (composite FK on the location kind).
+- **ST-7:** Creating, dispatching or cancelling a transfer needs the permission for its **source**: `stock_transfer:dispatch_pharmacy` (PHA) or `stock_transfer:dispatch_store` (INV). Accepting it needs the permission for its **destination**: `stock_transfer:receive_pharmacy` (PHA) or `stock_transfer:receive_store` (INV). Any other combination gets 403. A dispatched transfer adds no stock at the destination until it is explicitly accepted. *(Tested on Day 18 only if transfers are built; see the roadmap.)*
+- **ST-8:** Dispensing, adjustments, supplier goods receipts and transfer receipts are separate endpoints. Each needs its own permission and writes its own movement kind (`dispense`, the adjustment kinds, `receipt`, `transfer_in`) and audit action (`dispensing.created`, `stock.adjusted`, `goods_receipt.created`, `stock_transfer.received`). The adjustment endpoint rejects any other movement kind with 422.
+- **ST-9:** The dispatcher of a transfer gets 403 when accepting, rejecting or recording the return of that transfer. The rejecter gets 403 when recording its return. Each refusal writes an `access.denied` audit row. The database also rejects a transfer whose receiver, rejecter or returner is the dispatcher, or whose returner is the rejecter.
+- **ST-10:** A transfer without a reason returns 422. Every transfer records its reason, source and destination, the dispatcher, receiver, rejecter and returner with their times, and each line's batches and quantity.
+- **ST-11:** Rejection needs a reason and moves no stock; the goods stay in transit. A rejected, returned or cancelled transfer keeps its full history (source, destination, batches, quantities, actors, times, rejection reason and status) and can't be deleted. Accepting the return writes one `transfer_return` movement per line, putting exactly the line quantity back into its **original** source batch. A dispatched transfer can't be cancelled (409), and cancelling a draft moves no stock.
+- **ST-12:** Two concurrent acceptances, or an acceptance racing a rejection, give exactly one success and one 409. A second return gets 409. After every transfer test, the reconciliation query shows that each line's `transfer_out` quantity equals its `transfer_in` or `transfer_return` quantity (never both), and that source, in-transit and destination totals are unchanged. DP-6 still holds.
 
 ### Expiry (EX)
 All expiry checks are enforced by the API, and the tests call the API directly with no UI.
@@ -282,6 +311,16 @@ All expiry checks are enforced by the API, and the tests call the API directly w
 - **SE-5:** No patient data appears in logs.
 - **SE-6:** A deactivated user's existing session is rejected on its next request.
 
+### Administration (AD)
+- **AD-1:** SA can list users, create and deactivate accounts, grant and revoke users' roles (`user_role:assign`), and change the permissions of roles SA doesn't hold (`role:manage`).
+- **AD-2:** ADM can create, deactivate and reset passwords for non-SA staff accounts (`user:manage`). ADM gets 403 when managing an SA account, changing their own account status, granting or revoking any role, or changing a role's permissions.
+- **AD-3:** Every user, including SA, gets 403 when changing their own role assignments or the permissions of a role they hold. Disabling, or removing the SA role from, the last active SA returns 409.
+- **AD-4:** Account, role and role-permission changes need a reason (422 without one). Each writes an audit row in the same transaction naming the actor, target user or role, action, reason, and the role or permission code.
+- **AD-5:** SA and ADM can read the audit log; every other role gets 403. No API route updates or deletes audit rows, no permission allows it, and the application's database role can't do either. A direct UPDATE or DELETE on `audit_logs` is blocked by the trigger.
+- **AD-6:** SA's audit viewer shows audit metadata and patient identifiers (patient ID and MRN), never patient names, contact details, other demographics or clinical note contents. Every audit-log search writes exactly one `audit_log.searched` row, and neither writing nor reading that row creates further audit rows.
+- **AD-7:** SA can change system and security settings, and ADM can change only the allowlisted operational settings. A key outside the caller's permission returns 403, and an unknown key returns 422. Every change needs a reason and writes a `settings.changed` row with the key and its old and new values.
+- **AD-8:** A new account with no roles can log in, change its own password and log out, and gets 403 on every other protected endpoint. After SA assigns a role, the new permissions apply on the user's next request.
+
 ## 6. The end-to-end acceptance scenario
 
 | Step | What happens | Criteria tested |
@@ -293,11 +332,11 @@ All expiry checks are enforced by the API, and the tests call the API directly w
 | 5 | Doctor prescribes and recommends a follow-up | RX-4, FU-1 |
 | 6 | Doctor checks medicine availability | RX-1 to RX-3 |
 | 7 | Pharmacist verifies and dispenses | DP-1 to DP-4, DP-8, DP-10, EX-*, SB-* |
-| 8 | Batch-level stock movements are recorded | DP-1, DP-6, DP-7 |
+| 8 | Batch-level stock movements are recorded | DP-1, DP-6, DP-7, ST-1, ST-3 |
 | 9 | Charges and payments are recorded | CF-4, CF-5, DS-*, BL-1 to BL-4, BL-10 |
 | 10 | Receptionist books the follow-up | FU-2 |
 | 11 | Dashboards reflect all of the above | DB-1 |
-| 12 | Audit and permissions hold throughout | AX-*, SE-* |
+| 12 | Audit and permissions hold throughout | AX-*, SE-*, AD-* |
 
 The failure cases that must be tested are:
 - concurrent booking (BK-2)
