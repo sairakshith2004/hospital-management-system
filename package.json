@@ -25,7 +25,10 @@
     "db:roles": "npm run db:roles -w @hospitalos/api",
     "db:migrate": "npm run db:migrate -w @hospitalos/api",
     "db:migrate:test": "npm run db:migrate:test -w @hospitalos/api",
-    "db:generate": "npm run db:generate -w @hospitalos/api --"
+    "db:generate": "npm run db:generate -w @hospitalos/api --",
+    "db:seed": "npm run db:seed -w @hospitalos/api",
+    "db:seed:test": "npm run db:seed:test -w @hospitalos/api",
+    "test:db": "npm run test:db -w @hospitalos/api"
   },
   "devDependencies": {
     "@eslint/js": "10.0.1",

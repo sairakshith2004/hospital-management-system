@@ -14,3 +14,5 @@ export const ROLE_CODES = [
 ] as const;
 
 export type RoleCode = (typeof ROLE_CODES)[number];
+
+export * from './permissions.js';

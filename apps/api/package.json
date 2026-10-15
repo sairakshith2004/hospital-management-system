@@ -11,7 +11,10 @@
     "db:roles": "tsx --env-file=../../.env src/db/bootstrap-roles.ts",
     "db:migrate": "tsx --env-file=../../.env src/db/migrate.ts dev",
     "db:migrate:test": "tsx --env-file=../../.env src/db/migrate.ts test",
-    "db:generate": "drizzle-kit generate"
+    "db:generate": "drizzle-kit generate",
+    "db:seed": "tsx --env-file=../../.env src/db/seed/run-seed.ts dev",
+    "db:seed:test": "tsx --env-file=../../.env src/db/seed/run-seed.ts test",
+    "test:db": "node --env-file=../../.env ../../node_modules/vitest/vitest.mjs run --config vitest.db.config.ts"
   },
   "dependencies": {
     "drizzle-orm": "0.45.3",
