@@ -1,6 +1,6 @@
 # HospitalOS: entity relationship design
 
-Status: approved design, Day 2 (2026-10-14). The tables are implemented phase by phase, following [`roadmap.md`](roadmap.md).
+Status: approved design, Day 2 (2026-10-14), amended 2026-10-15 (C1–C4). The tables are implemented phase by phase, following [`roadmap.md`](roadmap.md).
 
 Abbreviations: **PK** primary key, **FK** foreign key, **UQ** unique, **CK** check constraint, **IX** index.
 
@@ -11,6 +11,10 @@ erDiagram
   departments ||--o{ employees : employs
   departments ||--o{ locations : contains
   employees ||--o| users : "logs in as"
+  users ||--o{ user_roles : holds
+  roles ||--o{ user_roles : "granted as"
+  roles ||--o{ role_permissions : bundles
+  permissions ||--o{ role_permissions : "included in"
   employees ||--o| doctor_profiles : "is a"
   doctor_profiles ||--o{ doctor_fees : charges
   doctor_profiles ||--o{ doctor_schedules : works
@@ -38,6 +42,7 @@ erDiagram
   stock_items ||--o{ stock_batches : ""
   locations ||--o{ stock_batches : stores
   stock_batches ||--o{ stock_movements : ledger
+  locations ||--o{ stock_movements : "recorded at"
   prescriptions ||--o{ dispensings : ""
   dispensings ||--|{ dispensing_lines : ""
   prescription_items ||--o{ dispensing_lines : fulfils
@@ -65,13 +70,15 @@ erDiagram
   goods_receipts ||--|{ grn_lines : ""
   po_lines |o--o{ grn_lines : ""
   grn_lines }o--|| stock_batches : "creates/tops up"
+  locations ||--o{ stock_transfers : "from/to"
   stock_transfers ||--|{ stock_transfer_lines : ""
   stock_batches ||--o{ stock_transfer_lines : "moved from/to"
+  stock_movements ||--o| stock_transfer_lines : records
 ```
 
 ## 2. Global rules
 
-- Every FK uses `ON DELETE RESTRICT`. The only exceptions are `user_roles` and `role_permissions`, which use `CASCADE`.
+- Every FK uses `ON DELETE RESTRICT`. The only exceptions are `user_roles` and `role_permissions`, which use `CASCADE`. Users, roles and permissions are never deleted (`hms_app` has no DELETE on them), so the cascade can't silently remove assignments. A role or permission assignment is removed only by deleting its join row through the service, which audits it.
 - **Composite FKs keep patient-scoped child rows consistent.** Each parent table has `UQ (id, patient_id)`, and each child references `(parent_id, patient_id)`. This makes it impossible for a child row to belong to a different patient than its parent.
 - Every `patient_id` column used in a composite FK is `NOT NULL`. By default PostgreSQL skips a composite FK check when any of its columns is NULL (`MATCH SIMPLE`). That is intended only for links that are genuinely optional, such as a manual invoice with no appointment or a goods receipt with no PO.
 - Every mutable table has `created_at`, `updated_at`, `created_by` and `updated_by`.
@@ -85,37 +92,42 @@ erDiagram
 |---|---|---|
 | `hospital_settings` | see the defaults below this table | CK `id = 1` |
 | `departments` | code, name, is_clinical, active | UQ code; UQ name |
-| `locations` | department_id, code, name, kind (opd_room / pharmacy / store / lab) | UQ code. Seeded with `OPD-PHARM` and `GEN-STORE`. |
+| `locations` | department_id, code, name, kind (opd_room / pharmacy / store / lab) | UQ code; **UQ (id, kind)**, so other tables can require a location kind. Seeded with `OPD-PHARM` and `GEN-STORE`. |
 | `employees` | employee_no, names, department_id, designation, employment_status | UQ employee_no; IX department_id |
-| `users` | employee_id, username (citext), password_hash, status, failed_logins, locked_until | UQ employee_id; UQ username |
-| `roles` / `permissions` / `user_roles` / `role_permissions` | — | Join tables have composite PKs |
+| `users` | employee_id, username (citext), password_hash, status, failed_logins, locked_until | UQ employee_id; UQ username. A new user has no `user_roles` rows, and so no permissions, until SA assigns a role. |
+| `roles` | code, name, is_system, active | UQ code. The 11 system roles are seeded with `is_system = true`. |
+| `permissions` | code, description | UQ code. Seeded from `packages/shared` permission codes. |
+| `user_roles` | user_id, role_id, granted_by, granted_at | PK (user_id, role_id); CK `granted_by <> user_id` (nobody grants themselves a role). `granted_by` is null only for the seeded bootstrap SA. Managed with `user_role:assign` (SA only); the service also blocks revoking your own roles. |
+| `role_permissions` | role_id, permission_id, granted_by, granted_at | PK (role_id, permission_id). Managed with `role:manage` (SA only). The service rejects changes to a role the actor holds, so the SA role's permissions come only from the seed. |
 | `sessions` | sid, sess, expire | IX expire. The user is reloaded on every request, and any status other than `active` is rejected. |
 | `audit_logs` | bigint id, occurred_at, actor_type (user / system), actor_user_id (null only when actor_type = system), action, entity_type, entity_id, patient_id, break_glass_grant_id, request_id, ip, changes (jsonb), reason | INSERT-only for `hms_app`. IX (entity_type, entity_id); IX (patient_id, occurred_at); IX (actor_user_id, occurred_at); IX (action, occurred_at) |
 | `break_glass_grants` | user_id, patient_id, reason_category, reason_text, granted_at, expires_at, revoked_at, revoked_by, priority_review, reviewed_by, reviewed_at, review_outcome, review_note | CK `expires_at > granted_at`; CK `length(reason_text) >= 20`; CK `reviewed_by IS NULL OR reviewed_by <> user_id`; IX (user_id, patient_id, expires_at); partial IX WHERE `reviewed_at IS NULL` |
 | `idempotency_keys` | user_id, key, endpoint, request_hash, response_status, response_body, created_at | PK (user_id, key) |
 | `nurse_assignments` | nurse_employee_id, doctor_id, doctor_schedule_id, session_date, assigned_by, assigned_at, revoked_at, revoked_by, revoke_reason | FK nurse_employee_id → employees; **composite FK (doctor_schedule_id, doctor_id) → doctor_schedules(id, doctor_id)**; partial UQ (nurse_employee_id, doctor_schedule_id, session_date) WHERE `revoked_at IS NULL`; CK `(revoked_at IS NULL) = (revoked_by IS NULL)`; IX (nurse_employee_id, session_date). Managed by ADM. Assignments are revoked, never deleted, and every change is audited. |
 
-**Defaults in `hospital_settings`** (each can be changed without a code change):
+**Defaults in `hospital_settings`** (each can be changed without a code change). Each key belongs to exactly one settings permission (C3); the service rejects a key outside the caller's permission with 403, and every change writes a `settings.changed` audit row with a reason:
 
-| Setting | Default | Purpose |
-|---|---|---|
-| `name`, `timezone`, `currency` | — | Hospital identity; time zone `Asia/Kolkata` |
-| `discount_limit_bp` | 1000 (10%) | Discount threshold before approval is needed |
-| `near_expiry_days` | 30 | Window in which dispensing needs an acknowledgement |
-| `care_window_before_days` | 7 | Days before a visit when the doctor can read the chart |
-| `care_window_after_days` | 90 | Days after an encounter when the doctor can read the chart |
-| `break_glass_hours` | 4 | How long an emergency grant lasts |
-| `break_glass_alert_threshold` | 3 grants per user per 24 h | Flags grants for priority review; **never blocks access** |
-| `follow_up_grace_days` | 7 | Days after `due_to` before a pending follow-up is marked missed |
-| `prescription_validity_days` | 30 | Days after issue before an undispensed or partly dispensed prescription is closed |
-| `day_close_time` | 23:30 | Local time when the end-of-day job runs (architecture section 7) |
-| `day_close_enabled` | true | Turns the scheduled end-of-day run on or off without a code change |
-| `return_window_days` | 7 | Returns are accepted only within this many days of dispensing |
-| `cold_chain_restock_policy_ref` | null | Reference to an approved, documented cold-chain policy. While it's null, cold-chain returns are never restocked. |
+| Setting | Default | Purpose | Changed with |
+|---|---|---|---|
+| `name`, `timezone`, `currency` | — | Hospital identity; time zone `Asia/Kolkata` | `system_settings:manage` (SA) |
+| `discount_limit_bp` | 1000 (10%) | Discount threshold before approval is needed | `operational_settings:manage` (ADM) |
+| `near_expiry_days` | 30 | Window in which dispensing needs an acknowledgement | `operational_settings:manage` (ADM) |
+| `care_window_before_days` | 7 | Days before a visit when the doctor can read the chart | `security_settings:manage` (SA) |
+| `care_window_after_days` | 90 | Days after an encounter when the doctor can read the chart | `security_settings:manage` (SA) |
+| `break_glass_hours` | 4 | How long an emergency grant lasts | `security_settings:manage` (SA) |
+| `break_glass_alert_threshold` | 3 grants per user per 24 h | Flags grants for priority review; **never blocks access** | `security_settings:manage` (SA) |
+| `follow_up_grace_days` | 7 | Days after `due_to` before a pending follow-up is marked missed | `operational_settings:manage` (ADM) |
+| `prescription_validity_days` | 30 | Days after issue before an undispensed or partly dispensed prescription is closed | `operational_settings:manage` (ADM) |
+| `day_close_time` | 23:30 | Local time when the end-of-day job runs (architecture section 7) | `operational_settings:manage` (ADM) |
+| `day_close_enabled` | true | Turns the scheduled end-of-day run on or off without a code change | `operational_settings:manage` (ADM) |
+| `return_window_days` | 7 | Returns are accepted only within this many days of dispensing | `operational_settings:manage` (ADM) |
+| `cold_chain_restock_policy_ref` | null | Reference to an approved, documented cold-chain policy. While it's null, cold-chain returns are never restocked. | `operational_settings:manage` (ADM) |
+
+Login lockout (5 failures, 15 minutes; SE-4) and session lifetime are fixed configuration in the MVP. If they become editable, they belong to `security_settings:manage`.
 
 `reason_category` is one of: emergency, covering_colleague, transferred_care, other.
 
-The changes column in `audit_logs` stores field names only; it never stores sensitive values.
+The changes column in `audit_logs` stores field names only; it never stores sensitive values. The exceptions are role and permission changes, which record the role or permission code, and settings changes, which record the old and new value ([`permissions.md`](permissions.md) section 5).
 
 ### 3.2 Doctors, fees and scheduling
 
@@ -185,27 +197,55 @@ Either way, the price is **copied** into the invoice line, so later fee changes 
 | `stock_items` | sku, kind (medicine / general), name, base_unit, category, reorder_level, tracks_expiry | UQ sku |
 | `medicine_products` | stock_item_id (PK and FK), brand_name, manufacturer, dosage_form, route, pack_size, rx_only, requires_cold_chain (default false), equivalence_key | trigram IX brand_name; IX equivalence_key |
 | `product_ingredients` | product_id, ingredient_id, strength_value (numeric), strength_unit | PK (product_id, ingredient_id); CK `strength_value > 0` |
-| `stock_batches` | stock_item_id, location_id, batch_no, expiry_date, unit_cost_paise, sale_price_paise, qty_on_hand, status (active / quarantined / recalled) | **CK `qty_on_hand >= 0`**; UQ (stock_item_id, location_id, batch_no); **UQ (id, stock_item_id)**; IX (stock_item_id, location_id, expiry_date) |
-| `stock_movements` | bigint id, batch_id, kind, qty (signed), balance_after, reason, ref_type, ref_id, performed_by, occurred_at | Append-only; CK `qty <> 0`; CK `balance_after >= 0`; IX (batch_id, occurred_at); IX (ref_type, ref_id) |
+| `stock_batches` | stock_item_id, location_id, batch_no, expiry_date, unit_cost_paise, sale_price_paise, qty_on_hand, status (active / quarantined / recalled) | **CK `qty_on_hand >= 0`**; UQ (stock_item_id, location_id, batch_no); **UQ (id, stock_item_id)**; **UQ (id, location_id)**; IX (stock_item_id, location_id, expiry_date) |
+| `stock_movements` | bigint id, batch_id, location_id, kind, qty (signed), balance_after, reason, ref_type, ref_id, performed_by, occurred_at | Append-only; CK `qty <> 0`; CK `balance_after >= 0`; **UQ (id, batch_id)**, so source rows can require a movement on a specific batch; **composite FK (batch_id, location_id) → stock_batches(id, location_id)**, so the recorded location always matches the batch; FK performed_by → users; **CK adjustment kinds (`adjustment_in`, `adjustment_out`, `damage`, `expiry_writeoff`) require a non-blank `reason`**; IX (batch_id, occurred_at); IX (location_id, occurred_at); IX (ref_type, ref_id) |
 | `dispensings` | dispense_no, prescription_id, patient_id, location_id, idempotency_key, allergy_check_ack, dispensed_by, dispensed_at, status | UQ (id, prescription_id); composite FK (prescription_id, patient_id) → prescriptions; UQ idempotency_key |
 | `dispensing_lines` | dispensing_id, prescription_id, prescription_item_id, batch_id, dispensed_product_id, qty, qty_returned, unit_price_paise, is_substitution, substitution_verified_by, substitution_note, near_expiry_ack, stock_movement_id | See the list below |
 | `dispensing_returns` | return_no, dispensing_line_id, qty, reason, restocked, unopened, packaging_intact, batch_verified, storage_conditions_ok, cold_chain_item, cold_chain_policy_ref, restock_verified_by, stock_movement_id, invoice_item_id, credit_note_line_id, returned_by, returned_at | See the list below |
-| `stock_transfers` (Tier 2) | transfer_no, from_location_id, to_location_id, status (draft / dispatched / received / cancelled), created_by, received_by | CK `from_location_id <> to_location_id` |
-| `stock_transfer_lines` (Tier 2) | transfer_id, from_batch_id, to_batch_id, qty, out_movement_id, in_movement_id | CK `qty > 0`; FK from_batch_id and to_batch_id → stock_batches; FK out_movement_id and in_movement_id → stock_movements (each UQ) |
+| `stock_transfers` (Tier 2) | transfer_no, from_location_id, to_location_id, reason, status (draft / dispatched / received / rejected / returned / cancelled), created_by, created_at, dispatched_by, dispatched_at, received_by, received_at, rejected_by, rejected_at, rejection_reason, returned_by, returned_at, cancelled_by, cancelled_at, cancel_reason | See the list below |
+| `stock_transfer_lines` (Tier 2) | transfer_id, from_location_id, to_location_id, stock_item_id, from_batch_id, to_batch_id (null until accepted), qty, out_movement_id, in_movement_id, return_movement_id | See the list below |
 
 **Equivalence key:** a trigger keeps `equivalence_key` in sync with `product_ingredients`. It is the sorted list of `ingredient:strength_value+unit`, then the dosage form, then the route, for example `paracetamol:500mg|tablet|oral`. It speeds up searching, but the dispensing service **recomputes** equivalence from the source rows and doesn't trust the stored key.
 
 **Expiry date:** stored as the last day the batch is valid. A label reading "03/2027" is stored as 2027-03-31. The goods-receipt form enforces this.
 
-**Movement kinds:** receipt, dispense, dispense_return, adjustment_in, adjustment_out, damage, expiry_writeoff, transfer_out, transfer_in, supplier_return.
+**Movement kinds:** receipt, dispense, dispense_return, adjustment_in, adjustment_out, damage, expiry_writeoff, transfer_out, transfer_in, transfer_return, supplier_return.
 
 **How a movement is linked to its source:** `stock_movements.ref_type` and `ref_id` are informational only. The authoritative link is a real FK from the source row to the movement:
 - `dispensing_lines.stock_movement_id`
 - `dispensing_returns.stock_movement_id`
 - `grn_lines.stock_movement_id`
-- `stock_transfer_lines.out_movement_id` and `in_movement_id`
+- `stock_transfer_lines.out_movement_id`, `in_movement_id` and `return_movement_id`
 
-Adjustments, damage and expiry write-offs need no separate source row: the movement itself, with its kind, reason and `performed_by`, is the record.
+Adjustments, damage and expiry write-offs need no separate source row: the movement itself is the record. It holds the actor (`performed_by`), timestamp (`occurred_at`), reason, location, batch and signed quantity, plus `balance_after` (C1).
+
+**Who can do what where (C1):** each stock operation has its own permission, checked against the location kind after the batch or transfer is locked ([`permissions.md`](permissions.md) note 3). Pharmacy adjustments need `stock:adjust_pharmacy` (PHA) and general-store adjustments need `stock:adjust_store` (INV).
+
+Constraints on `stock_transfers` (C1):
+- UQ transfer_no; **UQ (id, from_location_id, to_location_id)**.
+- CK `from_location_id <> to_location_id`; CK `reason` is not blank.
+- Each actor is stored with its time, and both are set or both are null: (dispatched_by, dispatched_at), (received_by, received_at), (rejected_by, rejected_at), (returned_by, returned_at), (cancelled_by, cancelled_at).
+- **Separation of duties:** CK `received_by <> dispatched_by`, CK `rejected_by <> dispatched_by`, **CK `returned_by <> dispatched_by`** and CK `returned_by <> rejected_by`. Nobody who dispatched a transfer accepts it, rejects it, or records its return, and the return is recorded by someone other than the rejecter.
+- **History is kept.** Transfers and their lines are never deleted (`hms_app` has no DELETE on `stock_transfers` or `stock_transfer_lines`). A finished transfer keeps its status, source and destination, reason, every actor and time, the rejection reason, and each line's batches, quantity and movements. Its audit rows record each transition.
+- **One CK ties the fields to the status:**
+  - `draft`: not dispatched.
+  - `dispatched`: dispatched; not received, rejected or cancelled.
+  - `received`: dispatched and received; not rejected.
+  - `rejected`: dispatched and rejected, with a non-blank `rejection_reason`; not received or returned.
+  - `returned`: dispatched, rejected and returned; not received.
+  - `cancelled`: cancelled with a non-blank `cancel_reason`; never dispatched.
+- Dispatch needs the permission for the source's location kind, and acceptance or rejection the permission for the destination's. Accepting a return needs the source's receipt permission ([`permissions.md`](permissions.md) note 3).
+
+Constraints on `stock_transfer_lines`:
+- CK `qty > 0`.
+- **Composite FK (transfer_id, from_location_id, to_location_id) → stock_transfers(id, from_location_id, to_location_id)**, so every line uses its transfer's locations.
+- **Composite FKs (from_batch_id, from_location_id) and (to_batch_id, to_location_id) → stock_batches(id, location_id)**, so stock leaves the source and lands at the destination.
+- **Composite FKs (from_batch_id, stock_item_id) and (to_batch_id, stock_item_id) → stock_batches(id, stock_item_id)**, so the item never changes in transit.
+- **Composite FKs (out_movement_id, from_batch_id), (return_movement_id, from_batch_id) and (in_movement_id, to_batch_id) → stock_movements(id, batch_id)**, each UQ. Each movement is on the right batch and belongs to exactly one line.
+- **CK `num_nonnulls(in_movement_id, return_movement_id) <= 1`**: a line is either delivered or returned, never both.
+- CK `in_movement_id IS NULL OR out_movement_id IS NOT NULL`; CK `return_movement_id IS NULL OR out_movement_id IS NOT NULL`. Nothing arrives or comes back that wasn't dispatched.
+- `to_batch_id` is null until acceptance. The composite FKs on it are skipped while it's null (`MATCH SIMPLE`), which is intended here.
+- The movement quantities equal the line quantity (−qty out, +qty in or back). The service enforces this under the transfer lock, and the transfer reconciliation test checks it (ST-12).
 
 Constraints on `dispensing_lines`:
 - **Composite FK (dispensing_id, prescription_id) → dispensings.**
@@ -309,7 +349,7 @@ Constraints on `invoice_discounts`:
 | `suppliers` | code, name, gstin, phone, email, active | UQ code |
 | `purchase_orders` | po_no, supplier_id, location_id, status (draft / submitted / partially_received / received / cancelled), created_by, approved_by | UQ po_no; FK supplier_id, location_id; **UQ (id, supplier_id)**; CK `approved_by IS NULL OR approved_by <> created_by` |
 | `po_lines` | po_id, stock_item_id, qty_ordered, qty_received, unit_cost_paise | FK po_id, stock_item_id; **UQ (id, stock_item_id)**; CK `qty_ordered > 0`; CK `qty_received BETWEEN 0 AND qty_ordered` |
-| `goods_receipts` | grn_no, supplier_id, po_id (nullable), location_id, supplier_invoice_ref, received_by, received_at | UQ grn_no; FK supplier_id, location_id; **composite FK (po_id, supplier_id) → purchase_orders(id, supplier_id)**, so a receipt matches its PO's supplier |
+| `goods_receipts` | grn_no, supplier_id, po_id (nullable), location_id, location_kind, supplier_invoice_ref, received_by, received_at | UQ grn_no; FK supplier_id; **composite FK (location_id, location_kind) → locations(id, kind) with CK `location_kind = 'store'`**, so supplier goods are received only into the general store (C1); **composite FK (po_id, supplier_id) → purchase_orders(id, supplier_id)**, so a receipt matches its PO's supplier |
 | `grn_lines` | grn_id, po_line_id (nullable), stock_item_id, batch_no, expiry_date, qty, unit_cost_paise, batch_id, stock_movement_id | FK grn_id; **composite FK (po_line_id, stock_item_id) → po_lines(id, stock_item_id)**; **composite FK (batch_id, stock_item_id) → stock_batches(id, stock_item_id)**; FK stock_movement_id → stock_movements (UQ); CK `qty > 0`. The service requires an expiry date when the item tracks expiry. |
 
 **Other Tier 3 tables:**
@@ -328,16 +368,22 @@ Constraints on `invoice_discounts`:
 | **Dispense** | See section 5 | prescription → items → batches (by id) → invoice |
 | Return a dispensed item | `dispensing_returns` row, `dispense_return` movement (only if restocked), `qty_returned`, reduce the draft line or create a credit note (`origin = dispense_return`), audit | dispensing line → batch → invoice |
 | Cancel after check-in, or cancel a lab order | Status change, deactivate the draft line or create a credit note (`origin = appointment_cancel` / `lab_cancel`), audit | appointment or lab order → invoice |
-| Stock adjustment | Movement with a reason, batch quantity, audit | batch |
-| Stock transfer (Tier 2) | `transfer_out` movement, a `transfer_in` movement into a new or existing batch, audit | batches (by id) |
+| Stock adjustment | `stock:adjust_pharmacy` or `stock:adjust_store` matching the batch's location kind (C1), movement with reason and location, batch quantity, `stock.adjusted` audit row | batch |
+| Dispatch a stock transfer (Tier 2) | Source dispatch permission, status must be `draft`, one `transfer_out` movement per line from its source batch (stock check), status, dispatcher and time, `stock_transfer.dispatched` audit row | transfer → batches (by id) |
+| Accept a stock transfer (Tier 2) | Destination receipt permission, a user other than the dispatcher, status must be `dispatched`, every source batch still active and unexpired (otherwise 422 and the receiver rejects instead), one `transfer_in` movement per line into a new or existing destination batch with the same item, batch number and expiry, receiver and time, `stock_transfer.received` audit row | transfer → batches (by id) |
+| Reject a stock transfer (Tier 2) | Destination receipt permission, a user other than the dispatcher, status must be `dispatched`, reason, **no stock movement** (the stock stays in transit), rejecter and time, `stock_transfer.rejected` audit row | transfer |
+| Return a rejected transfer (Tier 2) | Source receipt permission, a user other than both the dispatcher and the rejecter, status must be `rejected`, one `transfer_return` movement per line **into its original source batch**, returner and time, `stock_transfer.returned` audit row | transfer → batches (by id) |
+| Cancel a draft transfer (Tier 2) | Source dispatch permission, status must be `draft`, reason, no stock movement, `stock_transfer.cancelled` audit row | transfer |
 | Apply or approve a discount | Discount row, line allocation, recompute totals, audit | invoice |
 | Record a payment | Idempotency row, payment, invoice amounts and status, receipt number, audit | invoice → counter |
 | Approve a refund | Refund status, payment `refunded_paise`, invoice amounts, audit | invoice → payment |
-| Goods receipt | GRN, batches, receipt movements, PO quantities, audit | PO → batches |
+| Goods receipt | `goods_receipt:create`, store location only, GRN, batches, receipt movements, PO quantities, `goods_receipt.created` audit row | PO → batches |
+| Grant or revoke a role, or change a role's permissions | Self-change, held-role and last-SA checks, join row insert or delete, audit row with the code and reason | the target user row (or role row) |
+| Change a setting | Key-to-permission check, update, `settings.changed` audit row with old and new value and reason | `hospital_settings` row |
 | Grant emergency access | Re-check password, insert the grant, compute the priority-review flag, audit | none (no cap is enforced) |
 | End-of-day job | Each record's transition in its own small transaction, with a system-actor audit row | `pg_try_advisory_lock('day_close')` so only one instance runs; normal row locks per record |
 
-**Global lock order:** appointment → prescription → prescription items → stock batches (ascending id) → invoice → payment → document counter.
+**Global lock order:** appointment → prescription → prescription items → stock batches (ascending id) → invoice → payment → document counter. A stock transfer row is always locked before its batches.
 
 READ COMMITTED isolation is enough here, because every rule that reads a value and then writes based on it holds an explicit row or advisory lock. The concurrency tests prove this (BK-2, DP-2, DP-4, DP-7).
 
@@ -380,5 +426,8 @@ If any check fails, everything rolls back and the API returns 409 (a conflict, s
   - Audit rows are written in the same transaction as the change.
   - Clinical reads fail closed if the audit write fails.
   - Notes, movements and the audit log are append-only.
-  - The application's database role has no DELETE on clinical, financial or audit tables.
+  - The application's database role has no DELETE on clinical, financial or audit tables, or on users, roles and permissions.
+  - Stock adjustments record actor, time, reason, location, batch and quantity; the location is tied to the batch by a composite FK.
+  - Role grants, revocations, role-permission changes and settings changes are audited with a reason.
+  - Supplier goods receipts can target only store locations (composite FK on location kind).
   - The discount trail includes the threshold that applied when each discount was requested.

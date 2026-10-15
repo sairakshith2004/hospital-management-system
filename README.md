@@ -40,7 +40,7 @@ This README is updated with every change, so it always describes how the project
 - Design documentation in `docs/`.
 - Root tooling: npm workspaces, TypeScript, ESLint, Prettier and Vitest.
 - A local PostgreSQL 17.11 database running in Docker.
-- `packages/shared`: the 12 role codes, shared by API and web.
+- `packages/shared`: role codes shared by API and web. **`ROLE_CODES` (`packages/shared/src/index.ts`) still lists 12 roles, including `EQP`, and its test (`index.test.ts`) expects 12.** The approved product role model has exactly 11 (equipment is an INV permission group). This code hasn't been reconciled yet. Nothing uses `ROLE_CODES`, and no role seeding or enforcement exists, so reconciling it is scheduled as the first step of Day 4, before either is built.
 - `apps/api`: an Express API skeleton with configuration validation and a `GET /health` endpoint (no database access yet).
 - `apps/web`: a minimal React + TypeScript web app (Vite) with a HospitalOS landing screen and a live API-status indicator.
 - 20 automated tests.
@@ -97,7 +97,7 @@ What's in the repository right now:
 ├── packages/
 │   └── shared/                   Code shared by API and web (@hospitalos/shared)
 │       └── src/
-│           ├── index.ts          ROLE_CODES: the 12 roles from docs/permissions.md
+│           ├── index.ts          ROLE_CODES: 12 today; the design has 11 (Day 4 drops EQP)
 │           └── index.test.ts
 ├── docker/
 │   └── postgres/init/
@@ -366,10 +366,10 @@ Run these from the repository root.
 
 | Document | What it covers |
 |---|---|
-| [`docs/requirements.md`](docs/requirements.md) | Scope, functional requirements per role, approved safeguards, 101 acceptance criteria |
+| [`docs/requirements.md`](docs/requirements.md) | Scope, functional requirements per role, approved safeguards and scope clarifications, 121 acceptance criteria |
 | [`docs/architecture.md`](docs/architecture.md) | System shape, module rules, conventions, end-of-day job, frontend styling plan |
 | [`docs/erd.md`](docs/erd.md) | Every table, key, constraint and index; transaction boundaries; the dispensing algorithm |
-| [`docs/permissions.md`](docs/permissions.md) | The 12-role permission matrix, patient-data access rules, emergency access |
+| [`docs/permissions.md`](docs/permissions.md) | The 11-role permission matrix (including per-operation, per-location stock permissions, split settings permissions and Super Admin limits), patient-data access rules, emergency access, audit rules |
 | [`docs/state-machines.md`](docs/state-machines.md) | Lifecycles for appointments, encounters, prescriptions, invoices and more |
 | [`docs/roadmap.md`](docs/roadmap.md) | The 30-day plan with acceptance tests per day |
 | [`docs/adr/`](docs/adr/) | 13 architecture decision records |
@@ -398,3 +398,4 @@ The full day-by-day plan is in [`docs/roadmap.md`](docs/roadmap.md). The rest of
 | `0110c51` | README rewritten to document how the project works; kept up to date from now on. Pushed directly to `main` with the Day 3 commits above. |
 | `b275c21` | Shared package (role codes) and API skeleton: configuration validation, `GET /health`, 11 tests (merged to `main` as `26311c0`, PR #2) |
 | *(commit 5)* | Minimal React + TypeScript web app: landing screen, API-status indicator, `/api` dev proxy (temporary rewrite), React Hooks lint rules, 9 more tests |
+| *(pending, `phase/scope-alignment`)* | Scope clarifications C1 to C4: separate stock permissions per operation and location (pharmacy and store adjustments, supplier goods receipts, transfer receipts, dispensing); only Super Admin assigns roles and nobody changes their own; system and security settings split from operational settings; audit viewer limits and immutability. Also: exactly 11 roles (equipment and maintenance becomes an INV permission group), source-based transfer dispatch with explicit acceptance or rejection by a different user and audited returns, the no-role onboarding rule, and a Day 7 rebalance. Documentation only; adds acceptance criteria ST-1 to ST-12 and AD-1 to AD-8, and a test-milestone table in the roadmap. |

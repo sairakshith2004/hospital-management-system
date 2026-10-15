@@ -11,7 +11,7 @@ A full multispecialty hospital has inpatient care, but the 30-day, roughly 210-h
 - **Deferred:** inpatient admissions, beds, wards, transfers and discharge, plus emergency triage.
 - **Laboratory** is Tier 2.
 - **Locations (Q7):** one outpatient pharmacy (`OPD-PHARM`) and one general store (`GEN-STORE`). The `locations` table supports more.
-- **Stock transfers** are modelled. If time is short, only a single-step transfer is built, or the feature is deferred.
+- **Stock transfers** are modelled. They always need explicit acceptance by the receiving location (amended 2026-10-15, C1), so if time is short the feature is deferred rather than reduced to a single step.
 
 ## Alternatives considered
 - **Include inpatient care.** It would need roughly 5 more days and a different billing model (running bills and bed charges). Rejected for the MVP.
