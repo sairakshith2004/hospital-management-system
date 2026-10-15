@@ -34,9 +34,9 @@ This README is updated with every change, so it always describes how the project
 |---|---|
 | Day 1: repository and environment audit | ✅ Done |
 | Day 2: architecture design (requirements, ERD, permissions, state machines, ADRs, roadmap) | ✅ Done, merged to `main` (PR #1) |
-| Day 3: project foundation | 🚧 Mostly done, merged to `main` (PRs #2 and #3). CI is still to come. |
+| Day 3: project foundation | ✅ Done, merged to `main` (PRs #2 and #3). CI was added in Day 4 Step 6. |
 | Scope alignment (C1–C4) | ✅ Done, merged to `main` (PR #4) |
-| Day 4: database schema and migrations | 🚧 In progress on `phase/day-04-database`. Step 1 (role reconciliation) is committed. Step 2a (database tooling: packages, role and migration scripts, environment checks) is written and checked locally. Step 2b (role setup) is done: `hms_owner` and `hms_app` exist on `hms_dev` and `hms_test` with the documented privileges, and `PUBLIC` access to both databases is removed. Step 3 (schema and first migrations) is applied to `hms_dev` and `hms_test`: nine identity, settings and audit tables, triggers, and exact `hms_app` grants. Step 4 (seed data and database tests) is done: reference data (settings, 80 permissions, 11 roles, 134 role permissions) is seeded into `hms_dev` and `hms_test`, and 30 database tests pass against `hms_test`. Step 5 is done: every API route is under `/api` (the temporary Vite rewrite is removed), errors share one JSON shape with a request ID, and structured pino logging keeps credentials and patient data out of logs. Next: Step 6, CI (moves to Day 5 if needed). |
+| Day 4: database schema and migrations | 🚧 In progress on `phase/day-04-database`. Step 1 (role reconciliation) is committed. Step 2a (database tooling: packages, role and migration scripts, environment checks) is written and checked locally. Step 2b (role setup) is done: `hms_owner` and `hms_app` exist on `hms_dev` and `hms_test` with the documented privileges, and `PUBLIC` access to both databases is removed. Step 3 (schema and first migrations) is applied to `hms_dev` and `hms_test`: nine identity, settings and audit tables, triggers, and exact `hms_app` grants. Step 4 (seed data and database tests) is done: reference data (settings, 80 permissions, 11 roles, 134 role permissions) is seeded into `hms_dev` and `hms_test`, and 30 database tests pass against `hms_test`. Step 5 is done: every API route is under `/api` (the temporary Vite rewrite is removed), errors share one JSON shape with a request ID, and structured pino logging keeps credentials and patient data out of logs. Step 6 (CI) is added: `.github/workflows/ci.yml` runs on pushes to `phase/day-04-database` and pull requests to `main`. |
 
 **What exists today:**
 - Design documentation in `docs/`.
@@ -47,7 +47,7 @@ This README is updated with every change, so it always describes how the project
 - `apps/web`: a minimal React + TypeScript web app (Vite) with a HospitalOS landing screen and a live API-status indicator.
 - 99 automated tests that need no database, plus 30 database tests (`npm run test:db`).
 
-**What doesn't exist yet:** the bootstrap Super Admin account and departments (Day 5), authentication, patient features, styling with Tailwind CSS and shadcn/ui (Day 6), and CI. See the [Roadmap](#roadmap).
+**What doesn't exist yet:** the bootstrap Super Admin account and departments (Day 5), authentication, patient features, styling with Tailwind CSS and shadcn/ui (Day 6). See the [Roadmap](#roadmap).
 
 ---
 
@@ -59,7 +59,7 @@ This README is updated with every change, so it always describes how the project
 | Backend | Node.js 24, TypeScript, Express, Zod validation |
 | Database | PostgreSQL 17.11 with Drizzle ORM 0.45.3 and node-postgres (`pg`). Forward-only migrations in `apps/api/src/db/migrations/`. |
 | Testing | Vitest. Playwright for end-to-end tests if time allows. |
-| Tooling | npm workspaces, ESLint, Prettier, Docker Compose, GitHub Actions (CI is added on Day 3) |
+| Tooling | npm workspaces, ESLint, Prettier, Docker Compose, GitHub Actions CI (`.github/workflows/ci.yml`) |
 
 The reasons behind each choice are in the [architecture decision records](docs/adr/).
 
@@ -71,6 +71,7 @@ What's in the repository right now:
 
 ```
 .
+├── .github/workflows/ci.yml      CI: a checks job and a database job (fresh PostgreSQL per run)
 ├── docs/                         Design documentation (see "Design documents")
 │   └── adr/                      Architecture decision records 0001–0013
 ├── apps/
@@ -497,6 +498,19 @@ Run these from the repository root.
 
 **Known `npm audit` findings:** 4 moderate, all in development tooling. drizzle-kit 0.31.11 depends on `@esbuild-kit/esm-loader`, which pulls in `esbuild` 0.18.20 (GHSA-67mh-4wv8-2f99: esbuild's development server accepts cross-origin requests). drizzle-kit never starts that server, and none of it ships with the API. Don't run `npm audit fix --force`: it would install an incompatible drizzle-kit. We'll upgrade when a drizzle-kit release drops the old dependency.
 
+### Continuous integration
+
+`.github/workflows/ci.yml` runs on every push to `phase/day-04-database` and on every pull request into `main`. It has two jobs that run in parallel on `ubuntu-24.04`:
+
+| Job | Runs |
+|---|---|
+| **checks** | `npm ci`, lint, format check, typecheck, `npm test`, build, and `npm audit --audit-level=high` (fails on high or critical findings; never changes dependencies) |
+| **database** | Starts a **fresh, disposable PostgreSQL** on the runner with `docker compose` (the same digest-pinned image and init script as local), then `db:env:check`, `db:roles`, `db:migrate:test` (proving migrations apply to an empty database, then that a re-run applies nothing), `db:seed:test` twice (the second run must change nothing) and `npm run test:db` |
+
+- CI never connects to a developer's database and needs no repository secrets. It builds its own `.env` from `.env.example` with random throwaway passwords, which are masked in the logs.
+- The workflow only reads the repository (`permissions: contents: read`), and the checkout doesn't keep credentials.
+- Actions are pinned to full commit SHAs with the version in a comment. To update one, pick a release at least 14 days old, resolve its commit with `git ls-remote --tags https://github.com/<owner>/<repo> refs/tags/<tag> 'refs/tags/<tag>^{}'` (the `^{}` line, if present, is the commit for an annotated tag), then update both the SHA and the comment.
+
 ---
 
 ## Security practices
@@ -535,11 +549,7 @@ Run these from the repository root.
 
 ## Roadmap
 
-The full day-by-day plan is in [`docs/roadmap.md`](docs/roadmap.md). The rest of Day 3:
-
-| Next commit | Adds |
-|---|---|
-| Commit 6 | GitHub Actions CI (lint, format, typecheck, test, build) with the pinned Postgres service |
+The full day-by-day plan is in [`docs/roadmap.md`](docs/roadmap.md). Day 4 is complete on `phase/day-04-database`; Day 5 starts with security middleware, sessions and login.
 
 ---
 
@@ -561,4 +571,5 @@ The full day-by-day plan is in [`docs/roadmap.md`](docs/roadmap.md). The rest of
 | `5eb7e33` *(on `phase/day-04-database`, not pushed)* | Day 4 Step 3: Drizzle schema for nine identity, settings and audit tables; migration `0000` (generated) and `0001` (hand-written `updated_at` and append-only audit triggers, and exact `hms_app` grants), applied to `hms_dev` and `hms_test`; migration checksums and a forbidden-SQL guard (including `DISABLE TRIGGER` and `session_replication_role`); `npm run db:generate`; 22 more tests. |
 | `1a483db` *(on `phase/day-04-database`, not pushed)* | Day 4 Step 4: `packages/shared/src/permissions.ts` (80 permission codes, 11 role names, the role → permission map) with a test against `docs/permissions.md`; an idempotent, never-deleting reference-data seed (`db:seed`, `db:seed:test`) with drift detection and a system audit row; 30 rolled-back database tests (`test:db`), including the audit-log INSERT and append-only trigger checks; seeded into `hms_dev` and `hms_test`. 4 more unit tests. |
 | `790a55c` *(on `phase/day-04-database`, not pushed)* | Database-test harness: the test URLs must be `127.0.0.1` or `localhost` on port 5432 with no query parameters (also applies to `db:migrate:test`, `db:seed:test` and `db:env:check`); root `npm run test:db` forwards Vitest options. 9 more unit tests. |
-| *(pending, `phase/day-04-database`)* | Day 4 Step 5: every API route under `/api` (`GET /api/health`), and the temporary Vite rewrite removed; JSON 404s and one error shape `{ error: { code, message, requestId } }` with no internals exposed; `X-Request-Id` (reuses a valid UUID, otherwise generates one); pino 10.3.1 structured logging with an allowlisted request line, a database-safe error serializer and redaction; optional `LOG_LEVEL`. Smoke-checked live, directly and through the Vite proxy. 27 more tests. |
+| `973b62f` *(on `phase/day-04-database`)* | Day 4 Step 5: every API route under `/api` (`GET /api/health`), and the temporary Vite rewrite removed; JSON 404s and one error shape `{ error: { code, message, requestId } }` with no internals exposed; `X-Request-Id` (reuses a valid UUID, otherwise generates one); pino 10.3.1 structured logging with an allowlisted request line, a database-safe error serializer and redaction; optional `LOG_LEVEL`. Smoke-checked live, directly and through the Vite proxy. 27 more tests. |
+| *(pending, `phase/day-04-database`)* | Day 4 Step 6: GitHub Actions CI (`.github/workflows/ci.yml`): a checks job (lint, format, types, unit tests, build, `npm audit --audit-level=high`) and a database job on a fresh, disposable PostgreSQL (roles, migrations applied to an empty database and re-run, seed and re-run, database tests). Triggers: pushes to `phase/day-04-database` and pull requests to `main`; read-only permissions; actions pinned by commit SHA; no repository secrets. |
