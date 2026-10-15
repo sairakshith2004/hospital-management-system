@@ -99,3 +99,79 @@ function databaseTargets(): string[] {
     appUrl('test', env),
   ].map(describeTarget);
 }
+
+describe('test database targets', () => {
+  const withVar = (name: string, value: string) => ({ ...env, [name]: value });
+
+  /** The DbConfigError message thrown by `run`; fails the test if nothing is thrown. */
+  function messageOf(run: () => unknown): string {
+    try {
+      run();
+    } catch (err) {
+      expect(err).toBeInstanceOf(DbConfigError);
+      return (err as Error).message;
+    }
+    throw new Error('expected a DbConfigError');
+  }
+
+  it.each(['127.0.0.1', 'localhost'])('accepts %s:5432 for both test variables', (host) => {
+    const e = {
+      ...env,
+      TEST_DATABASE_URL: url('hms_app', 'hms_test', host),
+      TEST_MIGRATION_DATABASE_URL: url('hms_owner', 'hms_test', host),
+    };
+    expect(describeTarget(appUrl('test', e))).toBe(`hms_app@${host}:5432/hms_test`);
+    expect(describeTarget(migrationUrl('test', e))).toBe(`hms_owner@${host}:5432/hms_test`);
+  });
+
+  it.each([
+    [
+      'a remote host',
+      `postgres://hms_app:${SECRET}@db.example.com:5432/hms_test`,
+      'must point at 127.0.0.1:5432',
+    ],
+    [
+      'a private-network host',
+      `postgres://hms_app:${SECRET}@10.0.0.5:5432/hms_test`,
+      'must point at 127.0.0.1:5432',
+    ],
+    [
+      'another port',
+      `postgres://hms_app:${SECRET}@127.0.0.1:5433/hms_test`,
+      'must point at 127.0.0.1:5432',
+    ],
+    [
+      'no port (PGPORT could redirect it)',
+      `postgres://hms_app:${SECRET}@127.0.0.1/hms_test`,
+      'must point at 127.0.0.1:5432',
+    ],
+    [
+      'a host override in the query',
+      `postgres://hms_app:${SECRET}@127.0.0.1:5432/hms_test?host=db.example.com`,
+      'must not have query parameters',
+    ],
+    [
+      'the development database',
+      `postgres://hms_app:${SECRET}@127.0.0.1:5432/hms_dev`,
+      'must connect as hms_app to hms_test',
+    ],
+  ])('rejects %s for TEST_DATABASE_URL without revealing it', (_label, value, rule) => {
+    const message = messageOf(() => appUrl('test', withVar('TEST_DATABASE_URL', value)));
+    expect(message).toContain(rule);
+    expect(message).not.toContain(SECRET);
+    expect(checkVar('TEST_DATABASE_URL', withVar('TEST_DATABASE_URL', value))).not.toContain(
+      SECRET,
+    );
+  });
+
+  it('applies the same rules to TEST_MIGRATION_DATABASE_URL', () => {
+    const remote = `postgres://hms_owner:${SECRET}@db.example.com:5432/hms_test`;
+    const message = messageOf(() =>
+      migrationUrl('test', withVar('TEST_MIGRATION_DATABASE_URL', remote)),
+    );
+    expect(message).toBe(
+      'TEST_MIGRATION_DATABASE_URL must point at 127.0.0.1:5432 or localhost:5432.',
+    );
+    expect(message).not.toContain(SECRET);
+  });
+});

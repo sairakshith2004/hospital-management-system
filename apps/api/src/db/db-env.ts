@@ -66,16 +66,36 @@ function expectTarget(name: string, url: URL, user: string, database: string): U
   return url;
 }
 
+const TEST_PORT = '5432';
+
+/**
+ * Test URLs must be this machine's PostgreSQL on 5432, with nothing that could
+ * redirect them: no port means PGPORT applies, and a ?host= parameter overrides
+ * the host in the URL.
+ */
+function expectLocalTest(name: string, url: URL): void {
+  if (!LOCAL_HOSTS.has(url.hostname) || url.port !== TEST_PORT) {
+    throw new DbConfigError(`${name} must point at 127.0.0.1:5432 or localhost:5432.`);
+  }
+  if (url.search !== '') {
+    throw new DbConfigError(`${name} must not have query parameters.`);
+  }
+}
+
 /** Schema-owner URL for migrations and seeds: hms_owner on hms_dev or hms_test. */
 export function migrationUrl(mode: DbMode, env: Env = process.env): URL {
   const name = MIGRATION_VARS[mode];
-  return expectTarget(name, readUrl(env, name), OWNER_ROLE, DATABASES[mode]);
+  const url = expectTarget(name, readUrl(env, name), OWNER_ROLE, DATABASES[mode]);
+  if (mode === 'test') expectLocalTest(name, url);
+  return url;
 }
 
 /** Application URL for the API and database tests: hms_app on hms_dev or hms_test. */
 export function appUrl(mode: DbMode, env: Env = process.env): URL {
   const name = APP_VARS[mode];
-  return expectTarget(name, readUrl(env, name), APP_ROLE, DATABASES[mode]);
+  const url = expectTarget(name, readUrl(env, name), APP_ROLE, DATABASES[mode]);
+  if (mode === 'test') expectLocalTest(name, url);
+  return url;
 }
 
 /** Local superuser URL, used only by db:roles. Must point at this machine. */

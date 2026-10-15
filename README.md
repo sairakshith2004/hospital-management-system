@@ -43,9 +43,9 @@ This README is updated with every change, so it always describes how the project
 - Root tooling: npm workspaces, TypeScript, ESLint, Prettier and Vitest.
 - A local PostgreSQL 17.11 database running in Docker.
 - `packages/shared`: role codes shared by API and web. `ROLE_CODES` lists the 11 approved roles (equipment is an INV permission group, not a role), and `permissions.ts`: the 80 permission codes and the role → permission map, checked against `docs/permissions.md`.
-- `apps/api`: an Express API skeleton with configuration validation and a `GET /health` endpoint (no database access yet), plus database tooling in `src/db/`: environment checks, a role bootstrap script and a migration runner, plus the Drizzle schema and the first two migrations (nine tables, applied to `hms_dev` and `hms_test`; no data yet).
+- `apps/api`: an Express API skeleton with configuration validation and a `GET /health` endpoint (no database access yet), plus database tooling in `src/db/`: environment checks, a role bootstrap script and a migration runner, plus the Drizzle schema and the first two migrations (nine tables, applied to `hms_dev` and `hms_test`, which are seeded with reference data).
 - `apps/web`: a minimal React + TypeScript web app (Vite) with a HospitalOS landing screen and a live API-status indicator.
-- 63 automated tests that need no database, plus 30 database tests (`npm run test:db`).
+- 72 automated tests that need no database, plus 30 database tests (`npm run test:db`).
 
 **What doesn't exist yet:** the bootstrap Super Admin account and departments (Day 5), authentication, patient features, styling with Tailwind CSS and shadcn/ui (Day 6), and CI. See the [Roadmap](#roadmap).
 
@@ -380,7 +380,7 @@ Limits: the table owner (`hms_owner`, used only for reviewed migrations) or a su
 
 `npm run test:db` runs the `*.db.test.ts` files against `hms_test`. `npm test` skips them, so it never needs a database.
 
-- Connections use the same URL guards as the scripts, so they can only reach `hms_test`, as `hms_app` or `hms_owner`.
+- Connections use the same URL guards as the scripts, so they can only reach `hms_test`, as `hms_app` or `hms_owner`. `TEST_DATABASE_URL` and `TEST_MIGRATION_DATABASE_URL` must also point at `127.0.0.1` or `localhost` on an explicit port `5432`, with no query parameters (an omitted port would let `PGPORT` decide, and `?host=` would override the host). A development or remote URL is refused before any connection opens, and the error names only the variable and the rule. The same rules apply to `db:migrate:test`, `db:seed:test` and `db:env:check`.
 - Every test runs inside a transaction that's always rolled back. The only lasting effect is that `audit_logs_id_seq` advances, so audit ids in `hms_test` have gaps.
 - They check:
   - the applied migrations match `checksums.json`
@@ -411,7 +411,7 @@ Run these from the repository root.
 | `npm run format` | Prettier: rewrites files to the project style |
 | `npm run format:check` | Prettier: checks only, changes nothing (used in CI) |
 | `npm run typecheck` | Type-checks every workspace that has a `typecheck` script |
-| `npm test` | Runs all Vitest tests (currently 63, in 11 files). Web tests run in a simulated browser (jsdom). No database or running server is needed. Database tests are excluded; see `npm run test:db`. |
+| `npm test` | Runs all Vitest tests (currently 72, in 11 files). Web tests run in a simulated browser (jsdom). No database or running server is needed. Database tests are excluded; see `npm run test:db`. |
 | `npm run dev:api` | Starts the API in watch mode at `http://127.0.0.1:3000` |
 | `npm run dev:web` | Starts the web app at `http://127.0.0.1:5173`, forwarding `/api/*` to the API |
 | `npm run build` | Builds every workspace that has a `build` script; today that's the web app, into `apps/web/dist/` |
@@ -425,7 +425,7 @@ Run these from the repository root.
 | `npm run db:generate` | Generates the next migration from the schema (offline; never connects). Add `-- --custom --name=…` for hand-written SQL |
 | `npm run db:seed` | Seeds reference data into `hms_dev` as `hms_owner` (settings, permissions, roles, role permissions). Safe to re-run |
 | `npm run db:seed:test` | The same for `hms_test` |
-| `npm run test:db` | Runs the database tests against `hms_test` (rolled back; needs `.env` and the running database) |
+| `npm run test:db` | Runs the database tests against `hms_test` (rolled back; needs `.env` and the running database). Vitest options pass through, e.g. `npm run test:db -- --reporter=verbose` |
 
 ---
 
@@ -538,4 +538,5 @@ The full day-by-day plan is in [`docs/roadmap.md`](docs/roadmap.md). The rest of
 | `2e2ab29` *(on `phase/day-04-database`, not pushed)* | Day 4 Step 1: `ROLE_CODES` reconciled to the 11 approved roles (`EQP` removed); its test now checks the exact list. |
 | `4acbfde` *(on `phase/day-04-database`, not pushed)* | Day 4 Step 2a: drizzle-orm, pg and drizzle-kit installed; database URL guards, `db:env:check`, `db:roles` and `db:migrate` scripts with separate superuser, owner and application roles; `.env.example` with the five database URLs; 17 more tests. Step 2b: role setup hardened (PUBLIC `CONNECT`/`TEMPORARY` removed on both databases, password-safe error handling, superuser check first), local `.env` updated, and `db:roles` run: roles created and verified. |
 | `5eb7e33` *(on `phase/day-04-database`, not pushed)* | Day 4 Step 3: Drizzle schema for nine identity, settings and audit tables; migration `0000` (generated) and `0001` (hand-written `updated_at` and append-only audit triggers, and exact `hms_app` grants), applied to `hms_dev` and `hms_test`; migration checksums and a forbidden-SQL guard (including `DISABLE TRIGGER` and `session_replication_role`); `npm run db:generate`; 22 more tests. |
-| *(pending, `phase/day-04-database`)* | Day 4 Step 4: `packages/shared/src/permissions.ts` (80 permission codes, 11 role names, the role → permission map) with a test against `docs/permissions.md`; an idempotent, never-deleting reference-data seed (`db:seed`, `db:seed:test`) with drift detection and a system audit row; 30 rolled-back database tests (`test:db`), including the audit-log INSERT and append-only trigger checks; seeded into `hms_dev` and `hms_test`. 4 more unit tests. |
+| `1a483db` *(on `phase/day-04-database`, not pushed)* | Day 4 Step 4: `packages/shared/src/permissions.ts` (80 permission codes, 11 role names, the role → permission map) with a test against `docs/permissions.md`; an idempotent, never-deleting reference-data seed (`db:seed`, `db:seed:test`) with drift detection and a system audit row; 30 rolled-back database tests (`test:db`), including the audit-log INSERT and append-only trigger checks; seeded into `hms_dev` and `hms_test`. 4 more unit tests. |
+| *(pending, `phase/day-04-database`)* | Database-test harness: the test URLs must be `127.0.0.1` or `localhost` on port 5432 with no query parameters (also applies to `db:migrate:test`, `db:seed:test` and `db:env:check`); root `npm run test:db` forwards Vitest options. 9 more unit tests. |
