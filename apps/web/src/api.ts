@@ -1,6 +1,6 @@
 export type ApiHealth = 'online' | 'offline';
 
-/** Calls GET /api/health (proxied to the API's /health). Never throws. */
+/** Calls GET /api/health (through the Vite proxy in development). Never throws. */
 export async function checkApiHealth(timeoutMs = 5000): Promise<ApiHealth> {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);

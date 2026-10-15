@@ -36,16 +36,16 @@ This README is updated with every change, so it always describes how the project
 | Day 2: architecture design (requirements, ERD, permissions, state machines, ADRs, roadmap) | ✅ Done, merged to `main` (PR #1) |
 | Day 3: project foundation | 🚧 Mostly done, merged to `main` (PRs #2 and #3). CI is still to come. |
 | Scope alignment (C1–C4) | ✅ Done, merged to `main` (PR #4) |
-| Day 4: database schema and migrations | 🚧 In progress on `phase/day-04-database`. Step 1 (role reconciliation) is committed. Step 2a (database tooling: packages, role and migration scripts, environment checks) is written and checked locally. Step 2b (role setup) is done: `hms_owner` and `hms_app` exist on `hms_dev` and `hms_test` with the documented privileges, and `PUBLIC` access to both databases is removed. Step 3 (schema and first migrations) is applied to `hms_dev` and `hms_test`: nine identity, settings and audit tables, triggers, and exact `hms_app` grants. Step 4 (seed data and database tests) is done: reference data (settings, 80 permissions, 11 roles, 134 role permissions) is seeded into `hms_dev` and `hms_test`, and 30 database tests pass against `hms_test`. Next: Step 5, the `/api` route prefix, error handler and logging. |
+| Day 4: database schema and migrations | 🚧 In progress on `phase/day-04-database`. Step 1 (role reconciliation) is committed. Step 2a (database tooling: packages, role and migration scripts, environment checks) is written and checked locally. Step 2b (role setup) is done: `hms_owner` and `hms_app` exist on `hms_dev` and `hms_test` with the documented privileges, and `PUBLIC` access to both databases is removed. Step 3 (schema and first migrations) is applied to `hms_dev` and `hms_test`: nine identity, settings and audit tables, triggers, and exact `hms_app` grants. Step 4 (seed data and database tests) is done: reference data (settings, 80 permissions, 11 roles, 134 role permissions) is seeded into `hms_dev` and `hms_test`, and 30 database tests pass against `hms_test`. Step 5 is done: every API route is under `/api` (the temporary Vite rewrite is removed), errors share one JSON shape with a request ID, and structured pino logging keeps credentials and patient data out of logs. Next: Step 6, CI (moves to Day 5 if needed). |
 
 **What exists today:**
 - Design documentation in `docs/`.
 - Root tooling: npm workspaces, TypeScript, ESLint, Prettier and Vitest.
 - A local PostgreSQL 17.11 database running in Docker.
 - `packages/shared`: role codes shared by API and web. `ROLE_CODES` lists the 11 approved roles (equipment is an INV permission group, not a role), and `permissions.ts`: the 80 permission codes and the role → permission map, checked against `docs/permissions.md`.
-- `apps/api`: an Express API skeleton with configuration validation and a `GET /health` endpoint (no database access yet), plus database tooling in `src/db/`: environment checks, a role bootstrap script and a migration runner, plus the Drizzle schema and the first two migrations (nine tables, applied to `hms_dev` and `hms_test`, which are seeded with reference data).
+- `apps/api`: an Express API skeleton with configuration validation a `GET /api/health` liveness endpoint, request IDs, consistent JSON errors and structured, redacted logging (no database access from the API yet), plus database tooling in `src/db/`: environment checks, a role bootstrap script and a migration runner, plus the Drizzle schema and the first two migrations (nine tables, applied to `hms_dev` and `hms_test`, which are seeded with reference data).
 - `apps/web`: a minimal React + TypeScript web app (Vite) with a HospitalOS landing screen and a live API-status indicator.
-- 72 automated tests that need no database, plus 30 database tests (`npm run test:db`).
+- 99 automated tests that need no database, plus 30 database tests (`npm run test:db`).
 
 **What doesn't exist yet:** the bootstrap Super Admin account and departments (Day 5), authentication, patient features, styling with Tailwind CSS and shadcn/ui (Day 6), and CI. See the [Roadmap](#roadmap).
 
@@ -81,9 +81,18 @@ What's in the repository right now:
 │   │   ├── vitest.config.ts      Unit tests; excludes *.db.test.ts
 │   │   ├── vitest.db.config.ts   `npm run test:db`: database tests only, one file at a time
 │   │   └── src/
-│   │       ├── server.ts         Entry point: validate config → start listening → shut down cleanly
-│   │       ├── app.ts            createApp(): builds the Express app and its routes
-│   │       ├── app.test.ts       Tests for GET /health
+│   │       ├── server.ts         Entry point: validate config → create logger → start listening → shut down cleanly
+│   │       ├── app.ts            createApp({ logger }): middleware order and the /api routes
+│   │       ├── app.test.ts       Tests for GET /api/health and JSON 404s
+│   │       ├── lib/
+│   │       │   ├── errors.ts       AppError: an error whose status, code and message are safe to send
+│   │       │   ├── logger.ts       createLogger(): pino with redaction and a database-safe error serializer
+│   │       │   └── logger.test.ts  Log-capture tests: no credentials, cookies, query strings or patient data
+│   │       ├── middleware/
+│   │       │   ├── request-id.ts   X-Request-Id: reuse a valid UUID, otherwise generate one
+│   │       │   ├── request-log.ts  One allowlisted log line per request
+│   │       │   ├── error-handler.ts  JSON 404 and the { error: { code, message, requestId } } handler
+│   │       │   └── *.test.ts
 │   │       ├── db/
 │   │       │   ├── db-env.ts         Database URL guards: each URL must use the expected role and database
 │   │       │   ├── check-env.ts      npm run db:env:check: reports each variable as set / missing / invalid
@@ -114,6 +123,7 @@ What's in the repository right now:
 │           ├── api.ts            checkApiHealth(): calls /api/health with a 5-second timeout
 │           ├── index.css         Minimal accessible styles
 │           ├── test-setup.ts     Cleans up after each test
+│           ├── vite-config.test.ts  The /api proxy forwards paths unchanged (no rewrite)
 │           └── *.test.ts(x)      Tests for api.ts, ApiStatus and App
 ├── packages/
 │   └── shared/                   Code shared by API and web (@hospitalos/shared)
@@ -201,7 +211,7 @@ npm run lint && npm run format:check && npm run typecheck && npm test
 
 # 6. Run the API and call its health endpoint
 npm run dev:api                      # in one terminal; Ctrl+C stops it
-curl -s 127.0.0.1:3000/health        # in another: {"status":"ok"}
+curl -s 127.0.0.1:3000/api/health    # in another: {"status":"ok"}
 
 # 7. Run the web app (in a second terminal, with the API still running)
 npm run dev:web                      # then open http://127.0.0.1:5173
@@ -219,8 +229,10 @@ On Linux, use `sed -i` (without `''`) in step 3.
 ```
 .env ──► process.env ──► loadEnv() (config/env.ts) ──► createApp() (app.ts) ──► listen(HOST, PORT)
                               │                                │
-                              └─ invalid → print problems,     └─ GET /health → 200 {"status":"ok"}
+                              └─ invalid → print problems,     └─ GET /api/health → 200 {"status":"ok"}
                                  exit with code 1
+
+Middleware: requestId → request log → JSON body (100 KB) → /api routes → JSON 404 → error handler
 ```
 
 **Environment variables:**
@@ -230,6 +242,7 @@ On Linux, use `sed -i` (without `''`) in step 3.
 | `PORT` | No | `3000` | Whole number from 1 to 65535 |
 | `HOST` | No | `127.0.0.1` | Address to listen on. Localhost by default; a deployed container would set `0.0.0.0`. |
 | `NODE_ENV` | No | `development` | `development`, `test` or `production` |
+| `LOG_LEVEL` | No | `info` | `fatal`, `error`, `warn`, `info`, `debug` or `silent` |
 
 **If the configuration is wrong,** the API refuses to start and lists every problem. It names the variable and the rule, **never the value**, so a password can't leak into the terminal or logs. For example:
 ```
@@ -238,11 +251,18 @@ Invalid environment configuration:
 - DATABASE_URL: Invalid URL
 ```
 
-**`GET /health`** reports only that the process is running: `200 {"status":"ok"}`. It deliberately exposes no version, environment or configuration details. The Express `X-Powered-By` header is turned off, and JSON request bodies are limited to 100 KB. A database readiness check arrives on Day 4.
+**`GET /api/health`** reports only that the process is running: `200 {"status":"ok"}`. It deliberately exposes no version, environment or configuration details. The Express `X-Powered-By` header is turned off, and JSON request bodies are limited to 100 KB. A database readiness check (`/api/health/ready`) arrives on Day 5, with the API's database connection.
+
+**Errors:** every error response has the same shape, `{"error":{"code":"…","message":"…","requestId":"…"}}`, and every response carries an `X-Request-Id` header with the same ID. Codes so far: `NOT_FOUND` (404, any path without a route), `INVALID_JSON` (400), `PAYLOAD_TOO_LARGE` (413), `VALIDATION_FAILED` (422, with field paths only, never the submitted values) and `INTERNAL_ERROR` (500). Exception messages, stack traces and database details are never sent. A client may send its own `X-Request-Id`; it's used only if it's a well-formed UUID, otherwise a new one is generated.
 
 **Why `app.ts` and `server.ts` are separate:** `createApp()` only builds the app; `server.ts` starts it. Tests use the app directly through `supertest` without opening a network port, and future middleware (security headers, sessions, CSRF) is added in one place.
 
-**Logging:** plain `console` for now. On Day 4 it's replaced by a structured logger (pino) that strips sensitive fields.
+**Logging:** JSON lines via pino.
+- One line per request with only the request ID, method, path **without its query string**, status and duration. Bodies, headers, cookies and query strings are never logged.
+- Unexpected errors are logged with their type, message and stack; database errors without their message or values (only code, table, column and constraint).
+- Credential, connection-string and personal-data keys are redacted as a backstop.
+- The startup line shows only host, port and environment.
+- `LOG_LEVEL` sets the level. `lib/logger.test.ts` enforces all of this (groundwork for SE-5).
 
 ---
 
@@ -259,11 +279,11 @@ The **Check again** button repeats the check.
 
 **How the browser reaches the API (the Vite proxy):**
 ```
-Browser ──GET /api/health──► Vite dev server (127.0.0.1:5173) ──GET /health──► API (127.0.0.1:3000)
+Browser ──GET /api/health──► Vite dev server (127.0.0.1:5173) ──GET /api/health──► API (127.0.0.1:3000)
 ```
 The browser only ever talks to one address, so the API needs **no CORS configuration**. The web app always calls paths starting with `/api/`.
 
-> **Temporary compatibility arrangement:** the API's routes don't have an `/api` prefix yet, so the proxy currently strips `/api` before forwarding (`/api/health` → `/health`). On Day 4 the API will put every route under `/api` and the rewrite will be removed, so development and production use identical paths. See [`docs/roadmap.md`](docs/roadmap.md), Day 4.
+The proxy forwards paths unchanged, so development and production use identical `/api/…` paths. `vite-config.test.ts` fails if a rewrite is ever added back.
 
 **Accessibility:**
 - The status is announced to screen readers (`role="status"`, `aria-live="polite"`) and always written in words, never shown by colour alone.
@@ -411,7 +431,7 @@ Run these from the repository root.
 | `npm run format` | Prettier: rewrites files to the project style |
 | `npm run format:check` | Prettier: checks only, changes nothing (used in CI) |
 | `npm run typecheck` | Type-checks every workspace that has a `typecheck` script |
-| `npm test` | Runs all Vitest tests (currently 72, in 11 files). Web tests run in a simulated browser (jsdom). No database or running server is needed. Database tests are excluded; see `npm run test:db`. |
+| `npm test` | Runs all Vitest tests (currently 99, in 15 files). Web tests run in a simulated browser (jsdom). No database or running server is needed. Database tests are excluded; see `npm run test:db`. |
 | `npm run dev:api` | Starts the API in watch mode at `http://127.0.0.1:3000` |
 | `npm run dev:web` | Starts the web app at `http://127.0.0.1:5173`, forwarding `/api/*` to the API |
 | `npm run build` | Builds every workspace that has a `build` script; today that's the web app, into `apps/web/dist/` |
@@ -446,6 +466,7 @@ Run these from the repository root.
 |---|---|---|---|
 | express | 5.3.0 | runtime | HTTP server and routing |
 | zod | 4.6.7 | runtime | Validates configuration (and, from Day 4, requests) |
+| pino | 10.3.1 | runtime | Structured JSON logging with redaction |
 | drizzle-orm | 0.45.3 | runtime | Typed SQL queries and the migration runner |
 | pg | 8.23.1 | runtime | PostgreSQL driver (node-postgres) |
 | drizzle-kit | 0.31.11 | dev | Generates SQL migrations from the schema. `push` and `drop` are never used. |
@@ -539,4 +560,5 @@ The full day-by-day plan is in [`docs/roadmap.md`](docs/roadmap.md). The rest of
 | `4acbfde` *(on `phase/day-04-database`, not pushed)* | Day 4 Step 2a: drizzle-orm, pg and drizzle-kit installed; database URL guards, `db:env:check`, `db:roles` and `db:migrate` scripts with separate superuser, owner and application roles; `.env.example` with the five database URLs; 17 more tests. Step 2b: role setup hardened (PUBLIC `CONNECT`/`TEMPORARY` removed on both databases, password-safe error handling, superuser check first), local `.env` updated, and `db:roles` run: roles created and verified. |
 | `5eb7e33` *(on `phase/day-04-database`, not pushed)* | Day 4 Step 3: Drizzle schema for nine identity, settings and audit tables; migration `0000` (generated) and `0001` (hand-written `updated_at` and append-only audit triggers, and exact `hms_app` grants), applied to `hms_dev` and `hms_test`; migration checksums and a forbidden-SQL guard (including `DISABLE TRIGGER` and `session_replication_role`); `npm run db:generate`; 22 more tests. |
 | `1a483db` *(on `phase/day-04-database`, not pushed)* | Day 4 Step 4: `packages/shared/src/permissions.ts` (80 permission codes, 11 role names, the role → permission map) with a test against `docs/permissions.md`; an idempotent, never-deleting reference-data seed (`db:seed`, `db:seed:test`) with drift detection and a system audit row; 30 rolled-back database tests (`test:db`), including the audit-log INSERT and append-only trigger checks; seeded into `hms_dev` and `hms_test`. 4 more unit tests. |
-| *(pending, `phase/day-04-database`)* | Database-test harness: the test URLs must be `127.0.0.1` or `localhost` on port 5432 with no query parameters (also applies to `db:migrate:test`, `db:seed:test` and `db:env:check`); root `npm run test:db` forwards Vitest options. 9 more unit tests. |
+| `790a55c` *(on `phase/day-04-database`, not pushed)* | Database-test harness: the test URLs must be `127.0.0.1` or `localhost` on port 5432 with no query parameters (also applies to `db:migrate:test`, `db:seed:test` and `db:env:check`); root `npm run test:db` forwards Vitest options. 9 more unit tests. |
+| *(pending, `phase/day-04-database`)* | Day 4 Step 5: every API route under `/api` (`GET /api/health`), and the temporary Vite rewrite removed; JSON 404s and one error shape `{ error: { code, message, requestId } }` with no internals exposed; `X-Request-Id` (reuses a valid UUID, otherwise generates one); pino 10.3.1 structured logging with an allowlisted request line, a database-safe error serializer and redaction; optional `LOG_LEVEL`. Smoke-checked live, directly and through the Vite proxy. 27 more tests. |

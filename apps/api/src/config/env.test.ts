@@ -10,7 +10,12 @@ describe('loadEnv', () => {
       HOST: '127.0.0.1',
       PORT: 3000,
       DATABASE_URL: valid.DATABASE_URL,
+      LOG_LEVEL: 'info',
     });
+  });
+
+  it('accepts an explicit log level', () => {
+    expect(loadEnv({ ...valid, LOG_LEVEL: 'debug' }).LOG_LEVEL).toBe('debug');
   });
 
   it('coerces PORT from a string', () => {
@@ -23,6 +28,7 @@ describe('loadEnv', () => {
     ['non-numeric PORT', { ...valid, PORT: 'abc' }, 'PORT'],
     ['out-of-range PORT', { ...valid, PORT: '70000' }, 'PORT'],
     ['unknown NODE_ENV', { ...valid, NODE_ENV: 'staging' }, 'NODE_ENV'],
+    ['unknown LOG_LEVEL', { ...valid, LOG_LEVEL: 'verbose' }, 'LOG_LEVEL'],
   ])('rejects %s', (_label, source, variable) => {
     expect(() => loadEnv(source)).toThrow(EnvError);
     expect(() => loadEnv(source)).toThrow(variable);
