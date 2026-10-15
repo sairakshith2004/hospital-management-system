@@ -51,7 +51,7 @@ The system never diagnoses patients or recommends treatment. Allergy matching an
 | C3 | **Settings.** System-wide and security-sensitive settings (Super Admin) are separate from explicitly authorized operational settings (Hospital Administrator). There's no general-purpose settings permission. The server enforces the split on every change, and every change is audited. |
 | C4 | **Audit viewer.** Authorized audit viewers see patient identifiers (including MRN where needed) and relevant audit metadata, but no clinical note contents or unnecessary patient details. Audit-log searches are recorded without creating recursive audit events. Audit records can't be altered or deleted, and sensitive access and administrative changes are audited. |
 
-The project has exactly 11 roles (listed in [`permissions.md`](permissions.md) section 1). This is the approved product role model. The existing code's role list (12 entries) hasn't been reconciled yet; that's scheduled for the start of Day 4, before role seeding or enforcement is implemented. Equipment and maintenance is a permission group held by the Inventory / Procurement Manager, not a separate role. These clarifications add granular permissions, not roles.
+The project has exactly 11 roles (listed in [`permissions.md`](permissions.md) section 1). This is the approved product role model. The code's role list (`ROLE_CODES`) was reconciled to these 11 roles at the start of Day 4, before role seeding or enforcement was implemented. Equipment and maintenance is a permission group held by the Inventory / Procurement Manager, not a separate role. These clarifications add granular permissions, not roles.
 
 ## 3. Functional requirements by role
 

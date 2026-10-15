@@ -34,13 +34,15 @@ This README is updated with every change, so it always describes how the project
 |---|---|
 | Day 1: repository and environment audit | ✅ Done |
 | Day 2: architecture design (requirements, ERD, permissions, state machines, ADRs, roadmap) | ✅ Done, merged to `main` (PR #1) |
-| Day 3: project foundation | 🚧 In progress. The first Day 3 commits (safeguard docs, root tooling, local Postgres, this README) are on `main`. |
+| Day 3: project foundation | 🚧 Mostly done, merged to `main` (PRs #2 and #3). CI is still to come. |
+| Scope alignment (C1–C4) | ✅ Done, merged to `main` (PR #4) |
+| Day 4: database schema and migrations | 🚧 In progress. Step 1 (role reconciliation) is done on `phase/day-04-database`. |
 
 **What exists today:**
 - Design documentation in `docs/`.
 - Root tooling: npm workspaces, TypeScript, ESLint, Prettier and Vitest.
 - A local PostgreSQL 17.11 database running in Docker.
-- `packages/shared`: role codes shared by API and web. **`ROLE_CODES` (`packages/shared/src/index.ts`) still lists 12 roles, including `EQP`, and its test (`index.test.ts`) expects 12.** The approved product role model has exactly 11 (equipment is an INV permission group). This code hasn't been reconciled yet. Nothing uses `ROLE_CODES`, and no role seeding or enforcement exists, so reconciling it is scheduled as the first step of Day 4, before either is built.
+- `packages/shared`: role codes shared by API and web. `ROLE_CODES` lists the 11 approved roles (equipment is an INV permission group, not a role).
 - `apps/api`: an Express API skeleton with configuration validation and a `GET /health` endpoint (no database access yet).
 - `apps/web`: a minimal React + TypeScript web app (Vite) with a HospitalOS landing screen and a live API-status indicator.
 - 20 automated tests.
@@ -97,7 +99,7 @@ What's in the repository right now:
 ├── packages/
 │   └── shared/                   Code shared by API and web (@hospitalos/shared)
 │       └── src/
-│           ├── index.ts          ROLE_CODES: 12 today; the design has 11 (Day 4 drops EQP)
+│           ├── index.ts          ROLE_CODES: the 11 roles from docs/permissions.md
 │           └── index.test.ts
 ├── docker/
 │   └── postgres/init/
@@ -397,5 +399,6 @@ The full day-by-day plan is in [`docs/roadmap.md`](docs/roadmap.md). The rest of
 | `3e6d3a1` | Local PostgreSQL 17.11 via Docker Compose, digest-pinned |
 | `0110c51` | README rewritten to document how the project works; kept up to date from now on. Pushed directly to `main` with the Day 3 commits above. |
 | `b275c21` | Shared package (role codes) and API skeleton: configuration validation, `GET /health`, 11 tests (merged to `main` as `26311c0`, PR #2) |
-| *(commit 5)* | Minimal React + TypeScript web app: landing screen, API-status indicator, `/api` dev proxy (temporary rewrite), React Hooks lint rules, 9 more tests |
-| *(pending, `phase/scope-alignment`)* | Scope clarifications C1 to C4: separate stock permissions per operation and location (pharmacy and store adjustments, supplier goods receipts, transfer receipts, dispensing); only Super Admin assigns roles and nobody changes their own; system and security settings split from operational settings; audit viewer limits and immutability. Also: exactly 11 roles (equipment and maintenance becomes an INV permission group), source-based transfer dispatch with explicit acceptance or rejection by a different user and audited returns, the no-role onboarding rule, and a Day 7 rebalance. Documentation only; adds acceptance criteria ST-1 to ST-12 and AD-1 to AD-8, and a test-milestone table in the roadmap. |
+| `10915fd` | Minimal React + TypeScript web app: landing screen, API-status indicator, `/api` dev proxy (temporary rewrite), React Hooks lint rules, 9 more tests (merged to `main` as `8850ce4`, PR #3) |
+| `61d30d2` | Scope clarifications C1 to C4: separate stock permissions per operation and location (pharmacy and store adjustments, supplier goods receipts, transfer receipts, dispensing); only Super Admin assigns roles and nobody changes their own; system and security settings split from operational settings; audit viewer limits and immutability. Also: exactly 11 roles (equipment and maintenance becomes an INV permission group), source-based transfer dispatch with explicit acceptance or rejection by a different user and audited returns, the no-role onboarding rule, and a Day 7 rebalance. Documentation only; adds acceptance criteria ST-1 to ST-12 and AD-1 to AD-8, and a test-milestone table in the roadmap (merged to `main` as `17674f6`, PR #4). |
+| *(pending, `phase/day-04-database`)* | Day 4 Step 1: `ROLE_CODES` reconciled to the 11 approved roles (`EQP` removed); its test now checks the exact list. |

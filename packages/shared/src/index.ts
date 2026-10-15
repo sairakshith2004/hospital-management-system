@@ -10,7 +10,6 @@ export const ROLE_CODES = [
   'FIN',
   'HR',
   'INV',
-  'EQP',
   'MKT',
 ] as const;
 
