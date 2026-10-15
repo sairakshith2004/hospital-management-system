@@ -11,15 +11,10 @@ export default defineConfig({
     port: 5173,
     strictPort: true,
     proxy: {
-      // The browser calls /api/health; Vite forwards it to http://127.0.0.1:3000/health.
-      // The browser sees a single origin, so no CORS configuration is needed.
-      // TEMPORARY: the API has no /api prefix yet. On Day 4 the API mounts its routes
-      // under /api and this rewrite is removed, so dev and production paths match.
-      '/api': {
-        target: API_TARGET,
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
-      },
+      // The browser calls /api/…; Vite forwards the same path to the API, which serves
+      // every route under /api. The browser sees a single origin, so no CORS is needed,
+      // and development and production use identical paths.
+      '/api': { target: API_TARGET, changeOrigin: true },
     },
   },
   preview: { host: '127.0.0.1', port: 4173, strictPort: true },

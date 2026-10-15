@@ -22,9 +22,9 @@ Hiding parts of the UI is a convenience only and is never relied on for security
 | FIN | Accountant / Finance Manager |
 | HR | HR Manager |
 | INV | Inventory / Procurement Manager (also holds the equipment and maintenance permission group) |
-
-**The approved product role model is exactly these 11 roles.** The existing code hasn't been reconciled yet: `ROLE_CODES` in `packages/shared/src/index.ts` still has 12 entries, including `EQP`, and its test expects 12. Nothing uses it, and no role enforcement or role seeding exists yet. Reconciling it to these 11 roles is scheduled as the **first step of Day 4, before role seeding or role enforcement is implemented**.
 | MKT | Marketing Manager |
+
+**The approved product role model is exactly these 11 roles.** `ROLE_CODES` in `packages/shared/src/index.ts` was reconciled to these 11 roles on Day 4 (Step 1), before any role seeding or role enforcement was implemented. Its test checks the exact list.
 
 ## 2. Matrix
 

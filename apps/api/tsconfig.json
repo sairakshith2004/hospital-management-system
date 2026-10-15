@@ -6,5 +6,5 @@
     "types": ["node"],
     "noEmit": true
   },
-  "include": ["src"]
+  "include": ["src", "drizzle.config.ts", "vitest.config.ts", "vitest.db.config.ts"]
 }

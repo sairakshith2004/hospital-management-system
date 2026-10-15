@@ -1,0 +1,93 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - phase/day-04-database
+  pull_request:
+    branches:
+      - main
+
+# Least privilege: the workflow only reads the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash # bash -eo pipefail: any failing command, including inside a pipe, fails the step
+
+jobs:
+  checks:
+    name: Lint, types, unit tests, build, audit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install exactly from the lockfile
+        run: npm ci
+      - run: npm run lint
+      - run: npm run format:check
+      - run: npm run typecheck
+      - name: Unit tests (no database)
+        run: npm test
+      - run: npm run build
+      - name: Audit dependencies (fails on high or critical; never changes anything)
+        run: npm audit --audit-level=high
+
+  database:
+    name: Database (fresh, disposable PostgreSQL 17.11)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - name: Install exactly from the lockfile
+        run: npm ci
+
+      - name: Create a CI-only .env with random throwaway passwords (never printed)
+        run: |
+          umask 077
+          SU=$(openssl rand -hex 24); OWNER=$(openssl rand -hex 24); APP=$(openssl rand -hex 24)
+          echo "::add-mask::$SU"; echo "::add-mask::$OWNER"; echo "::add-mask::$APP"
+          # Same substitution order as the README: CHANGE_ME_OWNER and CHANGE_ME_APP first.
+          sed -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$SU/" \
+              -e "s/CHANGE_ME_OWNER/$OWNER/g" -e "s/CHANGE_ME_APP/$APP/g" \
+              -e "s/CHANGE_ME/$SU/g" .env.example > .env
+
+      - name: Start a fresh PostgreSQL on this runner (same pinned image and init script as local)
+        run: docker compose up -d --wait db
+
+      - name: Check the database settings (names and status only)
+        run: npm run db:env:check
+      - name: Create least-privilege roles and database access
+        run: npm run db:roles
+
+      - name: Migrations apply to an empty database
+        run: npm run db:migrate:test
+      - name: Re-running migrations applies nothing
+        run: |
+          npm run db:migrate:test | tee /dev/stderr | grep -q ': 0 applied,'
+
+      - name: Seed reference data
+        run: npm run db:seed:test
+      - name: Re-running the seed changes nothing
+        run: |
+          npm run db:seed:test | tee /dev/stderr | grep -q 'audit row: not needed (no changes)'
+
+      - name: Database tests (privileges, audit protections, constraints, seed; all rolled back)
+        run: npm run test:db -- --reporter=verbose
