@@ -59,13 +59,17 @@ jobs:
       - name: Install exactly from the lockfile
         run: npm ci
 
-      - name: Create a CI-only .env with random throwaway passwords (never printed)
+      - name: Create a CI-only .env with random throwaway passwords and session secret (never printed)
         run: |
           umask 077
           SU=$(openssl rand -hex 24); OWNER=$(openssl rand -hex 24); APP=$(openssl rand -hex 24)
+          SESSION=$(openssl rand -hex 32)
           echo "::add-mask::$SU"; echo "::add-mask::$OWNER"; echo "::add-mask::$APP"
-          # Same substitution order as the README: CHANGE_ME_OWNER and CHANGE_ME_APP first.
-          sed -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$SU/" \
+          echo "::add-mask::$SESSION"
+          # Same substitution order as the README: the session secret, CHANGE_ME_OWNER and
+          # CHANGE_ME_APP before CHANGE_ME.
+          sed -e "s/^SESSION_SECRET=.*/SESSION_SECRET=$SESSION/" \
+              -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$SU/" \
               -e "s/CHANGE_ME_OWNER/$OWNER/g" -e "s/CHANGE_ME_APP/$APP/g" \
               -e "s/CHANGE_ME/$SU/g" .env.example > .env
 

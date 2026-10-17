@@ -17,7 +17,7 @@ const CASCADE = new Set([
 const MUTABLE = ['hospital_settings', 'departments', 'employees', 'users', 'roles'];
 
 describe('database schema', () => {
-  it('defines exactly the Day 4 tables', () => {
+  it('defines exactly the expected tables', () => {
     expect([...configs.keys()].sort()).toEqual([
       'audit_logs',
       'departments',
@@ -26,6 +26,7 @@ describe('database schema', () => {
       'permissions',
       'role_permissions',
       'roles',
+      'sessions',
       'user_roles',
       'users',
     ]);

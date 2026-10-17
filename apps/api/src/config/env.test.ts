@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { EnvError, loadEnv } from './env.js';
 
-const valid = { DATABASE_URL: 'postgres://user:pw@127.0.0.1:5432/hms_dev' };
+// Synthetic test values only.
+const SECRET = 'a'.repeat(64);
+const valid = {
+  DATABASE_URL: 'postgres://user:pw@127.0.0.1:5432/hms_dev',
+  SESSION_SECRET: SECRET,
+};
 
 describe('loadEnv', () => {
   it('accepts a valid configuration and applies defaults', () => {
@@ -11,6 +16,8 @@ describe('loadEnv', () => {
       PORT: 3000,
       DATABASE_URL: valid.DATABASE_URL,
       LOG_LEVEL: 'info',
+      SESSION_SECRET: SECRET,
+      TRUST_PROXY: false,
     });
   });
 
@@ -23,24 +30,43 @@ describe('loadEnv', () => {
   });
 
   it.each([
-    ['missing DATABASE_URL', {}, 'DATABASE_URL'],
-    ['non-Postgres DATABASE_URL', { DATABASE_URL: 'mysql://u:p@h/db' }, 'DATABASE_URL'],
+    ['false', false],
+    ['1', 1],
+    ['3', 3],
+  ])('accepts TRUST_PROXY=%s', (value, expected) => {
+    expect(loadEnv({ ...valid, TRUST_PROXY: value }).TRUST_PROXY).toBe(expected);
+  });
+
+  it.each([
+    ['missing DATABASE_URL', { SESSION_SECRET: SECRET }, 'DATABASE_URL'],
+    ['non-Postgres DATABASE_URL', { ...valid, DATABASE_URL: 'mysql://u:p@h/db' }, 'DATABASE_URL'],
     ['non-numeric PORT', { ...valid, PORT: 'abc' }, 'PORT'],
     ['out-of-range PORT', { ...valid, PORT: '70000' }, 'PORT'],
     ['unknown NODE_ENV', { ...valid, NODE_ENV: 'staging' }, 'NODE_ENV'],
     ['unknown LOG_LEVEL', { ...valid, LOG_LEVEL: 'verbose' }, 'LOG_LEVEL'],
+    ['missing SESSION_SECRET', { DATABASE_URL: valid.DATABASE_URL }, 'SESSION_SECRET'],
+    ['short SESSION_SECRET', { ...valid, SESSION_SECRET: 'x'.repeat(31) }, 'SESSION_SECRET'],
+    [
+      'placeholder SESSION_SECRET',
+      { ...valid, SESSION_SECRET: `CHANGE_ME_SESSION${'x'.repeat(32)}` },
+      'SESSION_SECRET',
+    ],
+    ['TRUST_PROXY=true', { ...valid, TRUST_PROXY: 'true' }, 'TRUST_PROXY'],
+    ['TRUST_PROXY=4', { ...valid, TRUST_PROXY: '4' }, 'TRUST_PROXY'],
   ])('rejects %s', (_label, source, variable) => {
     expect(() => loadEnv(source)).toThrow(EnvError);
     expect(() => loadEnv(source)).toThrow(variable);
   });
 
-  it('never includes the offending value in the error', () => {
-    const secret = 'SuperSecret123';
+  it.each([
+    ['DATABASE_URL', { ...valid, DATABASE_URL: 'not a url SuperSecret123' }],
+    ['SESSION_SECRET', { ...valid, SESSION_SECRET: 'SuperSecret123' }],
+  ])('never includes the offending %s value in the error', (_name, source) => {
     try {
-      loadEnv({ DATABASE_URL: `not a url ${secret}` });
+      loadEnv(source);
       expect.unreachable();
     } catch (err) {
-      expect(String((err as Error).message)).not.toContain(secret);
+      expect(String((err as Error).message)).not.toContain('SuperSecret123');
     }
   });
 });

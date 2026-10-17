@@ -17,6 +17,14 @@ describe('GET /api/health', () => {
     expect(res.headers['x-powered-by']).toBeUndefined();
   });
 
+  it('sends helmet security headers', async () => {
+    const res = await request(createApp()).get('/api/health');
+    expect(res.headers['x-content-type-options']).toBe('nosniff');
+    expect(res.headers['x-frame-options']).toBe('SAMEORIGIN');
+    expect(res.headers['content-security-policy']).toMatch(/default-src 'self'/);
+    expect(res.headers['strict-transport-security']).toMatch(/max-age=/);
+  });
+
   it('sends a generated X-Request-Id', async () => {
     const res = await request(createApp()).get('/api/health');
     expect(res.headers['x-request-id']).toMatch(UUID);

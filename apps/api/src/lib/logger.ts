@@ -15,8 +15,13 @@ const SENSITIVE_KEYS = [
   'refreshToken',
   'sessionId',
   'sid',
+  'sess',
+  'csrfToken',
+  'currentPassword',
+  'newPassword',
   'authorization',
   'cookie',
+  'SESSION_SECRET',
   // connection settings
   'connectionString',
   'DATABASE_URL',

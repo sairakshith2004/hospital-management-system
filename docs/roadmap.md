@@ -1,83 +1,54 @@
-# HospitalOS: 30-day roadmap
+# HospitalOS: 10-day MVP plan
 
-Status: approved plan, Day 2 (2026-10-14). Rebalanced after the Day 2 review. Acceptance updated 2026-10-15 for scope clarifications C1–C4; see [Test milestones](#test-milestones).
+Status: approved 2026-10-17. Replaces the 30-day roadmap (kept in git history). Day 1 is 2026-10-17; Day 10 is 2026-10-26.
 
-The plan assumes about **7 hours per day, roughly 210 hours** in total.
+The goal is a polished, tested **outpatient** MVP for one multispecialty hospital with a real React interface, a real PostgreSQL database, authenticated staff accounts and server-side permissions. It is not a production-ready hospital ERP.
 
-- **Slip valve:** Tier 3 (days 21–22) is **deferred, not merely thinned,** whenever core-workflow completion, security or testing is at risk. The items marked *(optional)* go first.
-- **Buffer:** Day 30 is kept free.
-- **Protected time:** integration testing (Day 25), permission and failure testing (Day 26), security review (Day 27), production deployment (Day 28) and the backup drill (Day 29) are never cut.
+## Primary workflow (must work end to end)
+Reception registers or finds a patient → books an appointment or a walk-in → the patient appears in the doctor's queue → the doctor sees the authorized history and records vitals, notes, diagnoses, prescriptions and a follow-up → the doctor can view (not change) pharmacy stock → the pharmacist dispenses (batch-aware, transactional, never expired or insufficient stock) → billing invoices and records payments → dashboards show the real records. Basic lab is added if time allows.
 
-Every phase ends with a stop for your review. Acceptance IDs refer to [`requirements.md`](requirements.md).
+## Working cadence
+- One plan approval per phase; approved non-destructive work (writing code, tests, lint, typecheck) then runs without further stops.
+- One combined approval per day for that day's migration and seed (applied to `hms_dev` and `hms_test`) and the end-of-day push.
+- Dependency installs are grouped and approved separately; credentials and destructive operations always need explicit approval.
 
-**Tier 3 is consolidated.** HR and equipment share one day, and marketing has one day. That frees two days, which are used to split the overloaded Tier 1 days found in the review. This uses the slip valve agreed in D2 in advance, rather than waiting for an overrun.
-
-| Day | Milestone | Depends on | Acceptance |
-|---|---|---|---|
-| 1 | Repository and environment audit | — | Audit report |
-| 2 | Design docs approved; you install Docker | 1 | `docker run postgres:17` connects |
-| 3 | npm workspaces, TypeScript, ESLint and Prettier, `.gitignore`, `.env.example`, docker-compose (`postgres:17.11-bookworm` pinned by digest; `hms_dev`, `hms_test`), Zod environment validation, CI with the same pinned Postgres service | 2 | CI green; the app won't start if an environment variable is missing |
-| 4 | Drizzle and the migration pipeline (generated and hand-written SQL), `hms_owner` and `hms_app` roles and grants, identity and settings tables, `audit_logs` with its append-only trigger, **first, reconcile `ROLE_CODES` and its test to the 11 approved roles (before any role seeding or enforcement)**; permission seed (including the C1–C3 permission codes), Express skeleton, error handler, redacted logging; **API route prefix `/api`**: mount every API route (including health) under `/api` and remove the temporary Vite proxy rewrite, so development and production use the same paths | 3 | Migrations apply to an empty database; `hms_app` can't DELETE; error-shape test; `GET /api/health` works directly and through the Vite proxy with no rewrite |
-| 5 | helmet, rate limiting, sessions, login and lockout, CSRF, `requirePermission`, audit library (including system actor). **Hosting spike and dry-run deployment** of the API health check plus the database. | 4 | SE-2, SE-3, SE-4, SE-6, AD-5; the deployed health check reaches managed Postgres 17 with the required extensions |
-| 6 | Web shell (login page, role layouts, API client); patients API, search, duplicate warning, audit | 5 | PR-1 to PR-4 |
-| 7 | Patient UI; departments, doctors, schedules, exceptions | 6 | Schedule tests; SC-2 |
-| 8 | **Slot engine and booking** (EXCLUDE constraint and advisory lock) | 7 | SC-1, BK-1 to BK-3 |
-| 9 | Cancel, reschedule, check-in, walk-ins, queue; vitals at triage; reception UI; **day-close job, step 1 (no-show)** | 8 | BK-4, BK-5, QU-1 to QU-4, JB-1 (appointment part), JB-4 to JB-6 |
-| 10 | Encounters, diagnoses, notes (editable while in progress); nurse-assignments API (moved from Day 7, built with the nurse rule that uses it); **access service** (care rules 1 and 2, assignment-based nurse rule); clinical read audit | 9 | AX-1, AX-2, AX-7 to AX-9, AX-11, AX-13, CN-1 to CN-3 |
-| 11 | **Emergency access** (grant, no cap, priority review, revoke, review API); doctor UI (queue, chart, consultation form) | 10 | AX-4 to AX-6, AX-10 |
-| 12 | Medicine catalogue (ingredients, products, equivalence trigger), batches, locations (`OPD-PHARM`, `GEN-STORE`), synthetic catalogue seed; availability search API and doctor UI | 11 | RX-1 to RX-3 |
-| 13 | Prescriptions (allergy acknowledgement, substitution flag, cancel); follow-ups; care rule 3; **day-close steps 2 and 3** | 12 | RX-4, FU-1 to FU-4, AX-3, JB-1 to JB-3 |
-| 14 | Billing core: service catalogue, `doctor_fees`, invoices, items with typed FKs, deferred totals triggers, document numbering, consultation fee at check-in | 9, 13 | CF-1 to CF-3, CF-5, BL-1, BL-10; CF-4 (check-in and consultation part) |
-| 15 | Payments with idempotency, configurable discount threshold and approval, discarding drafts, void, credit notes (manual and workflow origin), refunds; billing UI | 14 | DS-1 to DS-6, BL-2 to BL-7, BL-9, BL-11, BL-12 |
-| 16 | **Dispensing transaction** (permission, expiry, substitution, medicine-only and stock checks on the server); pharmacy queue UI | 13, 15 | DP-1 to DP-4, DP-6, DP-8, DP-10, EX-1 to EX-5, SB-1 to SB-5; CF-4 (dispensing part) |
-| 17 | Returns (`dispensing_returns`, return window, restock checklist, cold-chain rule), pharmacy stock adjustments (`stock:adjust_pharmacy`), **concurrent stock-update tests**, low-stock and expiry queries | 16 | DP-5, DP-7, DP-9, DP-11, ST-1, ST-3 to ST-5, ST-8 (dispensing and adjustment part) |
-| 18 | Procurement: suppliers, purchase orders, goods receipts into the general store; general-store adjustments (`stock:adjust_store`); valuation; stock transfers with source-based dispatch, explicit acceptance or rejection by a different user, and audited returns *(optional: deferred if short, never reduced to one step)* | 17 | A goods receipt creates a batch and a movement; the composite FKs reject a mismatched supplier, item or location kind; DP-6 still holds; ST-2, ST-6, ST-8 (receipt part); ST-7, ST-9 to ST-12 if transfers are built |
-| 19 | Lab: catalogue, orders, sample collection (LAB only), results, verification, care rule 4, lab cancel credit; lab PDF *(optional)* | 10, 15 | LB-1 to LB-5, AX-12; CF-4 (lab part) |
-| 20 | Invoice and receipt PDFs; expenses with approval; collection and department revenue reports | 15 | BL-8; the creator can't approve their own expense |
-| 21 | Tier 3 (thin): HR (employees, attendance, leave, manual payroll) and equipment and maintenance (INV's equipment permission group) | 5 | Permission tests; AX-9 for HR and INV |
-| 22 | **Users, role-assignment and settings API** (SA and ADM; Tier 1, moved from Day 7, never deferred); Tier 3 (thin): marketing (enquiries, campaigns, consent, conversion report) | 5, 6 | AD-1 to AD-4, AD-7, AD-8; AX-9 for MKT |
-| 23 | Dashboards for REC, DOC and PHA | 9–19 | DB-1 |
-| 24 | Dashboards for ADM (including the emergency-access review queue and stuck appointments) and FIN; audit-log viewer for SA and ADM | 20, 23 | DB-1, AD-6 |
-| 25 | **Integration:** the 12-step end-to-end scenario as an automated API test; Playwright for the happy path *(optional)* | all | Scenario green |
-| 26 | **Permissions and failure cases:** a table-driven test across all endpoints and roles; every required failure case | 25 | SE-1, SE-5; failure list in requirements section 6 |
-| 27 | **Security review** (dependency audit, headers, cookies, CSRF, rate limits, log redaction, upload limits) and fixes | 26 | Review checklist closed |
-| 28 | **Production deployment** (managed database migrations, secrets, HTTPS-only cookies) | 27 | Production smoke test |
-| 29 | **Backup and restore drill**, demo seed data, README and runbook | 28 | A restored copy passes the smoke test |
-| 30 | Buffer and demo rehearsal | — | Scenario demonstrated live |
-
-## Test milestones
-
-Each test is scheduled with the feature it protects, never before the schema and code it needs.
-
-**Day 7 rebalance (2026-10-15).** Day 7 keeps the patient UI and scheduling setup. The nurse-assignments API moves to Day 10, where the nurse access rule consumes it (AX-13 was already tested there). The users, role-assignment and settings API moves to Day 22 and shares it with thin Tier 3 marketing. If Day 22 is short, marketing is deferred, never the admin API. Until Day 22, the seed assigns roles and default settings. Day 8 (booking concurrency, BK-2) is unchanged. No acceptance criteria were removed.
-
-| Day | Feature | Tests | Depends on |
-|---|---|---|---|
-| 4 | `audit_logs` table, append-only trigger, `hms_app` grants, permission seed | (schema only; tested on Day 5) | 3 |
-| 5 | Audit library, sessions, `requirePermission` | AD-5 (audit immutability and authorization) | 4 |
-| 17 | Pharmacy stock adjustments | ST-1, ST-3 to ST-5, ST-8 (dispensing and adjustment part) | 12, 16 |
-| 18 | Goods receipts, general store, transfers | ST-2, ST-6, ST-8 (receipt part); ST-7, ST-9 to ST-12 (transfer permissions, separate users, rejection and return, conservation) if transfers are built; if deferred, they move with the transfer feature unchanged | 17 |
-| 22 | Users, role-assignment and settings API | AD-1 to AD-4 (user and role management), AD-7 (settings permissions), AD-8 (onboarding with no role) | 5, 6 |
-| 24 | Audit-log viewer | AD-6 (viewer access and privacy, single non-recursive search event) | 5, 23 |
-| 26 | Table-driven permission test across every endpoint and role | SE-1, covering every new permission code | 25 |
-
-## Hours by phase
-
-| Days | Phase | Hours |
+## Schedule
+| Day | Deliverables | Acceptance |
 |---|---|---|
-| 1–5 | Foundation | ~35 |
-| 6–13 | Patient and doctor workflows | ~56 |
-| 14–19 | Money, medicines, supplies and lab | ~42 |
-| 20–24 | Administration and dashboards | ~35 |
-| 25–30 | Testing and delivery | ~42 |
+| 1 | Sessions, login/logout/me, lockout, CSRF, `requirePermission`, audit library, bootstrap admin (1A). Web foundation: router, data fetching, Tailwind and components, login page, protected shell, 401/403/expired states (1B). | Login through the UI; generic failures; lockout; CSRF 403; disabled user rejected; role-less user 403; tests for each. |
+| 2 | Departments, doctor profiles (specialty, fee), patients (MRN, demographics, allergies), trigram search, demo seed with one account per role. Patient search, registration and edit UI; doctor list. | Reception registers, finds and edits synthetic patients; duplicate check; validation; permission tests. |
+| 3 | Weekly schedules, availability, appointments with a database overlap constraint, walk-in tokens, check-in, cancel, no-show, queues. Booking and queue UI. | Concurrent double-booking is refused (parallel test); checked-in patients appear in the right queue. |
+| 4 | Encounters: vitals, diagnoses, notes, prescriptions, follow-up. Access rule: a doctor sees only patients with an appointment with them. Doctor workspace UI. | Cross-doctor access is 403 and audited; completed notes are read-only; prescriptions reach pharmacy. |
+| 5 | Ingredients, products (brand, strength, form), batches by location and expiry, append-only movements, dispensing (row locks, earliest expiry first, no expired or insufficient stock). Pharmacy UI; read-only stock search for doctors. | Concurrent dispensing can't oversell; stock can't go negative (CHECK); expired batches never chosen; doctors can't write stock. |
+| 6 | Invoices per visit (consultation fee; dispensing adds lines in the same transaction), gapless numbers, payments (cash, card, UPI, partial). Lab order → result → doctor view if time. | Exact totals; payments can't exceed the balance; lab either tested or explicitly deferred. |
+| 7 | Dashboards for reception, doctor, pharmacist, billing and admin from SQL aggregates; permission-based navigation; full UI flow. | No hard-coded figures; loading, empty and error states everywhere. |
+| 8 | User administration (create, disable, reset password, assign roles), goods receipt with supplier, low-stock and near-expiry lists, audit-log viewer, settings view. | Permission-tested; receipts write stock movements. |
+| 9 | End-to-end API workflow test, every route × every role, security pass, bug fixing. | All suites green in CI. |
+| 10 | Final checks, backup and restore drill into a new scratch database, demo seed, README and demo script; deployment only if Day 9 finished on time. | Definition of done met from a fresh clone. |
 
-Compared with the original five-phase outline, the "patient and doctor workflows" phase is now one day longer (8 days instead of 7), and "administration and dashboards" is one day shorter. Total hours are unchanged.
+## Scope
+| Area | Full | Simplified | Deferred |
+|---|---|---|---|
+| Auth and access | sessions, lockout, CSRF, permissions, audit | care rule = has an appointment with this doctor | break-glass access, nurse-assignment rule |
+| Patients | registration, search, demographics, allergies | duplicates by phone + name | record merge, attachments |
+| Scheduling | schedules, availability, booking, walk-ins, queue | weekly template; no leave or holidays | automatic day-close job, SMS |
+| Clinical | vitals, notes, diagnoses, prescriptions, follow-up | diagnosis codes as free text | addenda, templates |
+| Pharmacy | catalogue, batches, FEFO dispensing, movements, doctor read-only view | no substitution; stock in by receipt | returns, transfers, purchase orders, cold-chain rules |
+| Billing | invoices, payments, gapless numbers | no or one capped discount | refunds, credit notes, voids (Day 8 if time) |
+| Lab | order → result → doctor view (if time) | no sample tracking or second verifier | PDF report |
+| Admin | users, roles, audit viewer, settings view | — | role editor |
+| HR, finance, equipment, marketing | — | finance = billing collection reports | all deferred; no placeholder pages |
 
-## Risk
+## If a day slips
+Cut in this order: Day 8 extras → lab → deployment (local demo instead) → dashboard polish. Never cut: authentication, authorization tests, dispensing and stock integrity, billing correctness, the backup drill.
 
-- **Highest-risk days:** 5 (authentication and deployment), 8 (booking concurrency), 10 (access service), 15 (billing corrections), 16 (dispensing) and 17 (concurrent stock).
-- **If a day slips, the time comes from these, in order:**
-  1. the optional items (transfers, lab PDF, Playwright)
-  2. Tier 3 depth (days 21 and 22)
-  3. the Day 30 buffer
-- That reserve totals roughly 25 hours. Integration testing, security and deployment (days 25–29) are never used as a reserve.
+## Definition of done (primary workflow)
+From a fresh clone with migrations, the demo seed and `dev`, using synthetic data only:
+1. Reception logs in, finds or registers a patient, sees availability and books (or registers a walk-in); a conflicting booking is refused.
+2. After check-in the patient is in that doctor's queue.
+3. The doctor opens only their own patients (another doctor gets an audited 403), records vitals, diagnoses, notes, a prescription and a follow-up, and sees stock by ingredient, brand, strength, form, batch, expiry and location without being able to change it.
+4. The pharmacist dispenses; stock drops on the earliest-expiry valid batch with a movement row; expired or insufficient stock is refused; concurrent dispensing can't oversell.
+5. Billing shows consultation and medicine lines, records a payment, totals are exact and invoice numbers have no gaps.
+6. Every dashboard shows these records.
+7. Every endpoint returns 401 without a session and 403 without permission (route × role test); logins, denials and every change are audited; logs contain no personal data or secrets.
+8. CI is green: lint, typecheck, unit tests, database tests and the end-to-end API workflow test.

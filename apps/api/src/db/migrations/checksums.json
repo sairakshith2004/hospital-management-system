@@ -1,4 +1,6 @@
 {
   "0000_identity_settings_audit.sql": "708d3341f5dbc95e945b41037e220b0a4699a3cb32f7cd7b1b4b10a05099c224",
-  "0001_triggers_and_grants.sql": "656da3a8f462489a0856fbc0275eb274cb715e859c679b3efd407ac00d495d77"
+  "0001_triggers_and_grants.sql": "656da3a8f462489a0856fbc0275eb274cb715e859c679b3efd407ac00d495d77",
+  "0002_sessions.sql": "ea240ef62dc6be6d26bd18bb8e6817238c9cf44cf95c5386e6dec36b2851cf60",
+  "0003_sessions_grants.sql": "d63761510fd7515bec8110c954099a33bf7c2905df0e70bdf70ba33358f28c00"
 }
