@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { checkApiHealth } from './api';
+import { cn } from './lib/utils';
+import { checkApiHealth } from './lib/api';
 
 type Status = 'checking' | 'online' | 'offline';
 
@@ -9,7 +10,14 @@ const LABELS: Record<Status, string> = {
   offline: 'API unreachable',
 };
 
-export function ApiStatus() {
+const DOT: Record<Status, string> = {
+  checking: 'bg-slate-400',
+  online: 'bg-emerald-600',
+  offline: 'bg-red-600',
+};
+
+/** Live API health indicator. `compact` renders a single line for page footers. */
+export function ApiStatus({ compact = false }: { compact?: boolean }) {
   const [status, setStatus] = useState<Status>('checking');
 
   useEffect(() => {
@@ -28,12 +36,23 @@ export function ApiStatus() {
   }, []);
 
   return (
-    <section className="card" aria-labelledby="api-status-heading">
-      <h2 id="api-status-heading">System status</h2>
-      <p role="status" aria-live="polite" className={`status status-${status}`}>
-        <span className="status-dot" aria-hidden="true" /> {LABELS[status]}
+    <section
+      aria-label="System status"
+      className={cn(
+        'flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300',
+        compact ? 'justify-center' : 'rounded-lg border border-slate-200 p-4 dark:border-slate-700',
+      )}
+    >
+      <p role="status" aria-live="polite" className="flex items-center gap-2">
+        <span aria-hidden="true" className={cn('size-2 rounded-full', DOT[status])} />
+        {LABELS[status]}
       </p>
-      <button type="button" onClick={() => void recheck()} disabled={status === 'checking'}>
+      <button
+        type="button"
+        onClick={() => void recheck()}
+        disabled={status === 'checking'}
+        className="rounded text-teal-700 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-teal-600 disabled:opacity-50 dark:text-teal-400"
+      >
         Check again
       </button>
     </section>

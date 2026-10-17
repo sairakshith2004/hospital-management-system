@@ -1,6 +1,6 @@
 # hospital-management-system
 
-**HospitalOS** is an outpatient Hospital Management System for a single multispecialty hospital, built by one developer as a 30-day challenge. It is a **modular monolith**: a React web app, an Express API and a PostgreSQL database in one repository.
+**HospitalOS** is an outpatient Hospital Management System for a single multispecialty hospital, built by one developer. **Since 2026-10-17 the remaining work is planned as a 10-day MVP** (see [`docs/roadmap.md`](docs/roadmap.md)). It is a **modular monolith**: a React web app, an Express API and a PostgreSQL database in one repository.
 
 > ⚠️ **Synthetic data only.** This project has not been assessed against India's DPDP Act and Rules or clinical-records requirements. Do not put real patient data in it without legal, clinical and security review. The system never diagnoses patients or recommends treatment.
 
@@ -37,17 +37,18 @@ This README is updated with every change, so it always describes how the project
 | Day 3: project foundation | ✅ Done, merged to `main` (PRs #2 and #3). CI was added in Day 4 Step 6. |
 | Scope alignment (C1–C4) | ✅ Done, merged to `main` (PR #4) |
 | Day 4: database schema and migrations | 🚧 In progress on `phase/day-04-database`. Step 1 (role reconciliation) is committed. Step 2a (database tooling: packages, role and migration scripts, environment checks) is written and checked locally. Step 2b (role setup) is done: `hms_owner` and `hms_app` exist on `hms_dev` and `hms_test` with the documented privileges, and `PUBLIC` access to both databases is removed. Step 3 (schema and first migrations) is applied to `hms_dev` and `hms_test`: nine identity, settings and audit tables, triggers, and exact `hms_app` grants. Step 4 (seed data and database tests) is done: reference data (settings, 80 permissions, 11 roles, 134 role permissions) is seeded into `hms_dev` and `hms_test`, and 30 database tests pass against `hms_test`. Step 5 is done: every API route is under `/api` (the temporary Vite rewrite is removed), errors share one JSON shape with a request ID, and structured pino logging keeps credentials and patient data out of logs. Step 6 (CI) is added: `.github/workflows/ci.yml` runs on pushes to `phase/day-04-database` and pull requests to `main`. |
+| **10-day plan, Day 1: authentication** | 🚧 On `phase/day-04-database`, not yet committed. **Phase 1A (API):** `sessions` table (migrations `0002`, `0003`, applied to `hms_dev` and `hms_test`), login, logout and `/api/auth/me`, lockout, CSRF, permission middleware, audit library; the first administrator (`admin`) is bootstrapped in `hms_dev`. **Phase 1B (web):** Tailwind CSS, React Router and TanStack Query; login page, session-aware routing, protected app shell and sign-out, all against the real API. Interactive browser login still to be confirmed by the owner. |
 
 **What exists today:**
 - Design documentation in `docs/`.
 - Root tooling: npm workspaces, TypeScript, ESLint, Prettier and Vitest.
 - A local PostgreSQL 17.11 database running in Docker.
 - `packages/shared`: role codes shared by API and web. `ROLE_CODES` lists the 11 approved roles (equipment is an INV permission group, not a role), and `permissions.ts`: the 80 permission codes and the role → permission map, checked against `docs/permissions.md`.
-- `apps/api`: an Express API skeleton with configuration validation a `GET /api/health` liveness endpoint, request IDs, consistent JSON errors and structured, redacted logging (no database access from the API yet), plus database tooling in `src/db/`: environment checks, a role bootstrap script and a migration runner, plus the Drizzle schema and the first two migrations (nine tables, applied to `hms_dev` and `hms_test`, which are seeded with reference data).
+- `apps/api`: an Express API with configuration validation, a `GET /api/health` liveness endpoint, request IDs, consistent JSON errors, structured redacted logging, security headers (helmet), and server-side session authentication with permission checks (see [Authentication](#authentication)), plus database tooling in `src/db/`: environment checks, a role bootstrap script and a migration runner, plus the Drizzle schema and the first two migrations (nine tables, applied to `hms_dev` and `hms_test`, which are seeded with reference data).
 - `apps/web`: a minimal React + TypeScript web app (Vite) with a HospitalOS landing screen and a live API-status indicator.
-- 99 automated tests that need no database, plus 30 database tests (`npm run test:db`).
+- 189 automated tests that need no database (API and web), plus 55 database tests (`npm run test:db`) for privileges, the seed, authentication and the bootstrap administrator.
 
-**What doesn't exist yet:** the bootstrap Super Admin account and departments (Day 5), authentication, patient features, styling with Tailwind CSS and shadcn/ui (Day 6). See the [Roadmap](#roadmap).
+**What doesn't exist yet:** every hospital feature: patients, scheduling, consultations, pharmacy, billing, lab and dashboards. See the [Roadmap](#roadmap).
 
 ---
 
@@ -55,7 +56,7 @@ This README is updated with every change, so it always describes how the project
 
 | Layer | Choice |
 |---|---|
-| Frontend | React, TypeScript, Vite. Tailwind CSS and shadcn/ui are added on Day 6. |
+| Frontend | React 19, TypeScript, Vite 8, Tailwind CSS 4, React Router 8, TanStack Query 5, Radix primitives (`radix-ui`) for shadcn-style components written in the repository |
 | Backend | Node.js 24, TypeScript, Express, Zod validation |
 | Database | PostgreSQL 17.11 with Drizzle ORM 0.45.3 and node-postgres (`pg`). Forward-only migrations in `apps/api/src/db/migrations/`. |
 | Testing | Vitest. Playwright for end-to-end tests if time allows. |
@@ -188,15 +189,17 @@ cd hospital-management-system
 npm ci
 
 # 3. Create your local .env from the template, with three random passwords:
-#    superuser (SU), schema owner (OWNER) and application (APP).
+#    superuser (SU), schema owner (OWNER) and application (APP), and a session secret.
 #    They are never printed. .env is git-ignored and must never be committed.
-#    CHANGE_ME_OWNER and CHANGE_ME_APP must be replaced before CHANGE_ME,
-#    which is why the sed expressions are in this order.
+#    SESSION_SECRET, CHANGE_ME_OWNER and CHANGE_ME_APP must be replaced before
+#    CHANGE_ME, which is why the sed expressions are in this order.
 cp .env.example .env
 SU=$(openssl rand -hex 24); OWNER=$(openssl rand -hex 24); APP=$(openssl rand -hex 24)
-sed -i '' -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$SU/" \
+SESSION=$(openssl rand -hex 32)
+sed -i '' -e "s/^SESSION_SECRET=.*/SESSION_SECRET=$SESSION/" \
+  -e "s/^POSTGRES_PASSWORD=.*/POSTGRES_PASSWORD=$SU/" \
   -e "s/CHANGE_ME_OWNER/$OWNER/g" -e "s/CHANGE_ME_APP/$APP/g" -e "s/CHANGE_ME/$SU/g" .env   # macOS sed
-unset SU OWNER APP
+unset SU OWNER APP SESSION
 chmod 600 .env
 
 # 4. Start the database, check the .env, create the least-privilege roles, apply migrations
@@ -206,6 +209,7 @@ npm run db:roles         # creates hms_owner and hms_app, limits database access
 npm run db:migrate && npm run db:migrate:test
 npm run db:seed && npm run db:seed:test   # reference data: settings, permissions, roles (safe to re-run)
 npm run test:db                           # database tests against hms_test; every test rolls back
+npm run db:bootstrap-admin -- --username admin   # first administrator; hidden password prompt, one time only
 
 # 5. Check that everything works
 npm run lint && npm run format:check && npm run typecheck && npm test
@@ -230,16 +234,19 @@ On Linux, use `sed -i` (without `''`) in step 3.
 ```
 .env ──► process.env ──► loadEnv() (config/env.ts) ──► createApp() (app.ts) ──► listen(HOST, PORT)
                               │                                │
-                              └─ invalid → print problems,     └─ GET /api/health → 200 {"status":"ok"}
+                              └─ invalid → print problems,     └─ /api/health, /api/auth/*
                                  exit with code 1
 
-Middleware: requestId → request log → JSON body (100 KB) → /api routes → JSON 404 → error handler
+Middleware: helmet → requestId → request log → JSON body (100 KB) → session → loadUser → CSRF
+            → /api routes → JSON 404 → error handler
 ```
 
 **Environment variables:**
 | Variable | Required | Default | Rule |
 |---|---|---|---|
-| `DATABASE_URL` | Yes | — | Must be a `postgres://` or `postgresql://` URL that connects as `hms_app` to `hms_dev`. Required even though the API doesn't query the database yet, so a misconfigured app never starts. |
+| `DATABASE_URL` | Yes | — | Must be a `postgres://` or `postgresql://` URL that connects as `hms_app` to `hms_dev`. The API refuses to start if it connects as a superuser. |
+| `SESSION_SECRET` | Yes | — | Signs the session cookie. At least 32 characters and not the `.env.example` placeholder; generate with `openssl rand -hex 32`. Never logged. |
+| `TRUST_PROXY` | No | `false` | Reverse-proxy hops to trust for the client IP: `false`, `1`, `2` or `3`. `true` is rejected, because it would let any client fake its IP. |
 | `PORT` | No | `3000` | Whole number from 1 to 65535 |
 | `HOST` | No | `127.0.0.1` | Address to listen on. Localhost by default; a deployed container would set `0.0.0.0`. |
 | `NODE_ENV` | No | `development` | `development`, `test` or `production` |
@@ -254,7 +261,7 @@ Invalid environment configuration:
 
 **`GET /api/health`** reports only that the process is running: `200 {"status":"ok"}`. It deliberately exposes no version, environment or configuration details. The Express `X-Powered-By` header is turned off, and JSON request bodies are limited to 100 KB. A database readiness check (`/api/health/ready`) arrives on Day 5, with the API's database connection.
 
-**Errors:** every error response has the same shape, `{"error":{"code":"…","message":"…","requestId":"…"}}`, and every response carries an `X-Request-Id` header with the same ID. Codes so far: `NOT_FOUND` (404, any path without a route), `INVALID_JSON` (400), `PAYLOAD_TOO_LARGE` (413), `VALIDATION_FAILED` (422, with field paths only, never the submitted values) and `INTERNAL_ERROR` (500). Exception messages, stack traces and database details are never sent. A client may send its own `X-Request-Id`; it's used only if it's a well-formed UUID, otherwise a new one is generated.
+**Errors:** every error response has the same shape, `{"error":{"code":"…","message":"…","requestId":"…"}}`, and every response carries an `X-Request-Id` header with the same ID. Codes so far: `NOT_FOUND` (404, any path without a route), `INVALID_JSON` (400), `UNAUTHENTICATED` and `INVALID_CREDENTIALS` (401), `CSRF_INVALID` and `FORBIDDEN` (403), `PAYLOAD_TOO_LARGE` (413), `UNSUPPORTED_MEDIA_TYPE` (415), `VALIDATION_FAILED` (422, with field paths only, never the submitted values), `RATE_LIMITED` (429) and `INTERNAL_ERROR` (500). The shared TypeScript types are in `packages/shared/src/auth.ts`. Exception messages, stack traces and database details are never sent. A client may send its own `X-Request-Id`; it's used only if it's a well-formed UUID, otherwise a new one is generated.
 
 **Why `app.ts` and `server.ts` are separate:** `createApp()` only builds the app; `server.ts` starts it. Tests use the app directly through `supertest` without opening a network port, and future middleware (security headers, sessions, CSRF) is added in one place.
 
@@ -265,38 +272,69 @@ Invalid environment configuration:
 - The startup line shows only host, port and environment.
 - `LOG_LEVEL` sets the level. `lib/logger.test.ts` enforces all of this (groundwork for SE-5).
 
+### Authentication
+
+Server-side sessions stored in PostgreSQL ([ADR 0004](docs/adr/0004-session-authentication.md)); no tokens in browser storage.
+
+| Endpoint | Request | Response |
+|---|---|---|
+| `POST /api/auth/login` | JSON `{ "username", "password" }` (rate-limited) | `200 { user, csrfToken }` and the session cookie; any failure is `401 INVALID_CREDENTIALS` |
+| `GET /api/auth/me` | session cookie | `200 { user, csrfToken }` or `401 UNAUTHENTICATED` |
+| `POST /api/auth/logout` | session cookie and `X-CSRF-Token` | `204`, session deleted and cookie cleared |
+
+`user` is `{ id, username, fullName, roles, permissions }`; permissions are re-read from the database on every request, so a role change or deactivation applies immediately.
+
+- **Passwords:** argon2id (19 MiB, 2 passes). Unknown usernames are checked against a dummy hash so timing doesn't reveal which accounts exist.
+- **Every login failure looks the same** (`401 INVALID_CREDENTIALS`). The real reason (`unknown_user`, `inactive`, `locked`, `bad_password`) goes only into the audit log, and the attempted username of an unknown account is never stored.
+- **Lockout:** 5 consecutive wrong passwords lock the account for 15 minutes. **Rate limit:** 10 failed attempts per IP per 15 minutes, then `429 RATE_LIMITED` with `Retry-After`.
+- **Sessions:** cookie `hms.sid` (`__Host-hms.sid` in production), `httpOnly`, `SameSite=Lax`, `Secure` in production. 30 minutes idle (rolling) and 12 hours absolute from login. A new session ID is issued at login (prevents session fixation); logout deletes the session row. Sessions of disabled users are ended on their next request.
+- **No caching:** every API response is sent with `Cache-Control: no-store` and without an ETag, so the browser never stores user details or the CSRF token.
+- **CSRF:** every `POST`, `PUT`, `PATCH` and `DELETE` from a signed-in session must send the `X-CSRF-Token` header with the token from the login or `/me` response (keep it in memory, never in `localStorage`). Login itself must be JSON, which a cross-site form can't send.
+- **Permissions:** routes use `requirePermission(db, 'code')` with the codes from `packages/shared`. Without a session: `401`. Without the permission: `403 FORBIDDEN` and an `access.denied` audit row.
+- **Audit:** `auth.login_succeeded`, `auth.login_failed`, `auth.locked`, `auth.logout`, `access.denied`, `user.created`. Audit rows never contain passwords, hashes, session IDs, cookies or CSRF tokens (`lib/audit.ts` refuses such keys).
+
+**First administrator:** `npm run db:bootstrap-admin -- --username <name>` creates one Super Admin (SA) in `hms_dev`, as `hms_app`. You type the password twice at a hidden prompt (12–256 characters); it is never an argument, never read from a pipe, never printed, and only its hash is stored. It refuses in production, without an interactive terminal, and whenever any SA account already exists, so it can never reset or duplicate an administrator. Recovering a lost administrator is a manual, superuser-only procedure and is deliberately not scripted.
+
 ---
 
 ## Running the web app
 
-Use two terminals: `npm run dev:api` in the first and `npm run dev:web` in the second. Then open **http://127.0.0.1:5173**. The database isn't needed yet.
+Use two terminals: `npm run dev:api` in the first and `npm run dev:web` in the second (the database must be running). Then open **http://127.0.0.1:5173** and sign in with a staff account, such as the administrator created by `npm run db:bootstrap-admin`.
 
-**What you'll see:** the HospitalOS heading, a synthetic-data notice, and a **System status** card that reads:
-- **Checking API…** while the request is in flight
-- **API online** when the API answered `{"status":"ok"}`
-- **API unreachable** on an error, a timeout (5 seconds) or an unexpected answer
+**What you'll see:**
+- **Signed out:** the sign-in page (username, password), with a live API-status line.
+- **Signed in:** the app shell: the hospital name, your name and roles, a **Sign out** button, a navigation sidebar showing only what your permissions allow (just *Home* until the modules arrive), and a home page that welcomes you. An account without roles is told it is waiting for a role assignment.
+- Unknown paths show a "Page not found" page inside the shell; `/forbidden` is the "no access" page used when the API answers 403.
 
-The **Check again** button repeats the check.
+**How sign-in works in the browser:**
+- **Startup:** the app calls `GET /api/auth/me`. With a valid session cookie it opens the page you asked for; otherwise it shows `/login?next=<that page>`. If the API can't be reached, it shows "Can't reach the server" with **Try again** instead of signing you out.
+- **Sign in:** `POST /api/auth/login` with JSON. Failures show only "Invalid username or password." (or "Too many attempts. Try again in a few minutes." on 429), and the password field is cleared. After success you go to `next`, which must be a path inside the app; anything else (for example `//evil.example`) goes to `/`.
+- **CSRF token:** taken from the login and `/me` responses and kept **only in memory** (`src/lib/api.ts`). Every `POST`, `PUT`, `PATCH` and `DELETE` sends it as `X-CSRF-Token`; `GET` never does. A page reload fetches it again from `/me`.
+- **Sign out:** `POST /api/auth/logout` with the token; all cached data is dropped and you land on `/login?signedOut=1`.
+- **Session ended by the server** (30 minutes idle, 12 hours absolute, account disabled): the next API call gets 401, the app forgets the session and token, and sends you to `/login?expired=1&next=…` with "Your session has ended. Please sign in again."
+- Route guards and permission-based navigation only shape the screen; **the API checks authentication and permissions on every request.**
+
+**Where things live (`apps/web/src/`):**
+| Path | Responsibility |
+|---|---|
+| `lib/api.ts` | The only way to call the API: same-origin JSON, CSRF header on writes, `ApiError` for the API's error shape, session-expiry signal; plus `checkApiHealth` |
+| `lib/query-client.ts`, `lib/utils.ts` | TanStack Query defaults (no retries on 4xx); `cn()` class helper |
+| `features/auth/` | `AuthProvider` (session state, login, logout, `can()`), `RequireAuth` (route guard), `LoginPage`, `safeNext` |
+| `app/` | `AppShell`, `HomePage`, `ForbiddenPage`, `NotFoundPage`, and `navigation.ts` (menu items with the permission each needs) |
+| `components/ui/` | Hand-written shadcn-style `Button`, `Input`, `Label`, `Card`, `Alert`, `Spinner` |
+| `App.tsx`, `main.tsx` | Route table and providers |
 
 **How the browser reaches the API (the Vite proxy):**
 ```
-Browser ──GET /api/health──► Vite dev server (127.0.0.1:5173) ──GET /api/health──► API (127.0.0.1:3000)
+Browser ──/api/…──► Vite dev server (127.0.0.1:5173) ──/api/… (unchanged)──► API (127.0.0.1:3000)
 ```
-The browser only ever talks to one address, so the API needs **no CORS configuration**. The web app always calls paths starting with `/api/`.
+The browser only talks to one origin, so the session cookie is first-party and the API needs **no CORS configuration**. Use `127.0.0.1` consistently: `localhost` keeps a separate cookie. `vite-config.test.ts` fails if a path rewrite is ever added back.
 
-The proxy forwards paths unchanged, so development and production use identical `/api/…` paths. `vite-config.test.ts` fails if a rewrite is ever added back.
+**Security:** the session cookie is `httpOnly` (JavaScript can't read it) and the app never touches `document.cookie`, `localStorage` or `sessionStorage`. The web app reads no environment variables, so no secret can reach the browser bundle. Both dev servers listen on `127.0.0.1` only.
 
-**Accessibility:**
-- The status is announced to screen readers (`role="status"`, `aria-live="polite"`) and always written in words, never shown by colour alone.
-- Text and status colours meet WCAG AA contrast.
-- Keyboard focus is clearly visible.
-- Animations are turned off for users who ask for reduced motion.
+**Accessibility:** every field has a label; errors are announced (`role="alert"`) and notices politely (`role="status"`); status is always written in words, not colour alone; keyboard focus is clearly visible; light and dark themes follow the operating system.
 
-**Styling:** deliberately minimal CSS in `src/index.css`. Tailwind CSS and shadcn/ui arrive on Day 6 (see [`docs/architecture.md`](docs/architecture.md) §8).
-
-**Security:** the web app reads no environment variables, so it can't leak a secret into the browser bundle. Vite would only read `.env` files inside `apps/web`, and none exist there. Both dev servers listen on `127.0.0.1` only.
-
-**Production build:** `npm run build` writes static files to `apps/web/dist/`, which git ignores. `npm run preview -w @hospitalos/web` serves them at `http://127.0.0.1:4173`. That preview server has no `/api` proxy, so the status card shows "API unreachable" there; this is expected until deployment routing is set up (Day 5).
+**Production build:** `npm run build` writes static files to `apps/web/dist/` (git-ignored). `npm run preview -w @hospitalos/web` serves them at `http://127.0.0.1:4173` without the `/api` proxy, so sign-in doesn't work there until deployment routing is set up.
 
 ---
 
@@ -432,7 +470,7 @@ Run these from the repository root.
 | `npm run format` | Prettier: rewrites files to the project style |
 | `npm run format:check` | Prettier: checks only, changes nothing (used in CI) |
 | `npm run typecheck` | Type-checks every workspace that has a `typecheck` script |
-| `npm test` | Runs all Vitest tests (currently 99, in 15 files). Web tests run in a simulated browser (jsdom). No database or running server is needed. Database tests are excluded; see `npm run test:db`. |
+| `npm test` | Runs all Vitest tests (currently 189, in 24 files). Web tests run in a simulated browser (jsdom). No database or running server is needed. Database tests are excluded; see `npm run test:db`. |
 | `npm run dev:api` | Starts the API in watch mode at `http://127.0.0.1:3000` |
 | `npm run dev:web` | Starts the web app at `http://127.0.0.1:5173`, forwarding `/api/*` to the API |
 | `npm run build` | Builds every workspace that has a `build` script; today that's the web app, into `apps/web/dist/` |
@@ -446,6 +484,7 @@ Run these from the repository root.
 | `npm run db:generate` | Generates the next migration from the schema (offline; never connects). Add `-- --custom --name=…` for hand-written SQL |
 | `npm run db:seed` | Seeds reference data into `hms_dev` as `hms_owner` (settings, permissions, roles, role permissions). Safe to re-run |
 | `npm run db:seed:test` | The same for `hms_test` |
+| `npm run db:bootstrap-admin -- --username <name>` | Creates the first Super Admin in `hms_dev` with a hidden password prompt. Refuses if any administrator exists, in production, or without an interactive terminal |
 | `npm run test:db` | Runs the database tests against `hms_test` (rolled back; needs `.env` and the running database). Vitest options pass through, e.g. `npm run test:db -- --reporter=verbose` |
 
 ---
@@ -518,7 +557,7 @@ Run these from the repository root.
 - **Secrets live only in `.env`.** It's git-ignored, readable only by you (`chmod 600`), and never printed. `.env.example` holds names and placeholders only.
 - **The database listens only on localhost.**
 - **Docker images are pinned by digest**, and npm dependencies by exact version via the lockfile.
-- **Authorization is always checked on the server** (from Day 5). The UI never decides who may see what. See [`docs/permissions.md`](docs/permissions.md).
+- **Authentication and authorization are always checked on the server:** PostgreSQL-backed sessions, argon2id passwords, lockout, rate-limited login, CSRF tokens, and a permission check on every protected route. The UI never decides who may see what. See [`docs/permissions.md`](docs/permissions.md).
 - **Clinical and financial records are never hard-deleted**, and sensitive actions are audited. See [ADR 0011](docs/adr/0011-corrections-audit-no-hard-deletes.md).
 
 ---
@@ -542,14 +581,14 @@ Run these from the repository root.
 | [`docs/erd.md`](docs/erd.md) | Every table, key, constraint and index; transaction boundaries; the dispensing algorithm |
 | [`docs/permissions.md`](docs/permissions.md) | The 11-role permission matrix (including per-operation, per-location stock permissions, split settings permissions and Super Admin limits), patient-data access rules, emergency access, audit rules |
 | [`docs/state-machines.md`](docs/state-machines.md) | Lifecycles for appointments, encounters, prescriptions, invoices and more |
-| [`docs/roadmap.md`](docs/roadmap.md) | The 30-day plan with acceptance tests per day |
+| [`docs/roadmap.md`](docs/roadmap.md) | The 10-day MVP plan (from 2026-10-17), scope matrix and definition of done |
 | [`docs/adr/`](docs/adr/) | 13 architecture decision records |
 
 ---
 
 ## Roadmap
 
-The full day-by-day plan is in [`docs/roadmap.md`](docs/roadmap.md). Day 4 is complete on `phase/day-04-database`; Day 5 starts with security middleware, sessions and login.
+The 30-day plan was replaced on 2026-10-17 by a **10-day MVP plan**: [`docs/roadmap.md`](docs/roadmap.md). Day 1 (authentication, sessions, permissions and the login UI) is in progress.
 
 ---
 
@@ -572,4 +611,6 @@ The full day-by-day plan is in [`docs/roadmap.md`](docs/roadmap.md). Day 4 is co
 | `1a483db` *(on `phase/day-04-database`, not pushed)* | Day 4 Step 4: `packages/shared/src/permissions.ts` (80 permission codes, 11 role names, the role → permission map) with a test against `docs/permissions.md`; an idempotent, never-deleting reference-data seed (`db:seed`, `db:seed:test`) with drift detection and a system audit row; 30 rolled-back database tests (`test:db`), including the audit-log INSERT and append-only trigger checks; seeded into `hms_dev` and `hms_test`. 4 more unit tests. |
 | `790a55c` *(on `phase/day-04-database`, not pushed)* | Database-test harness: the test URLs must be `127.0.0.1` or `localhost` on port 5432 with no query parameters (also applies to `db:migrate:test`, `db:seed:test` and `db:env:check`); root `npm run test:db` forwards Vitest options. 9 more unit tests. |
 | `973b62f` *(on `phase/day-04-database`)* | Day 4 Step 5: every API route under `/api` (`GET /api/health`), and the temporary Vite rewrite removed; JSON 404s and one error shape `{ error: { code, message, requestId } }` with no internals exposed; `X-Request-Id` (reuses a valid UUID, otherwise generates one); pino 10.3.1 structured logging with an allowlisted request line, a database-safe error serializer and redaction; optional `LOG_LEVEL`. Smoke-checked live, directly and through the Vite proxy. 27 more tests. |
-| *(pending, `phase/day-04-database`)* | Day 4 Step 6: GitHub Actions CI (`.github/workflows/ci.yml`): a checks job (lint, format, types, unit tests, build, `npm audit --audit-level=high`) and a database job on a fresh, disposable PostgreSQL (roles, migrations applied to an empty database and re-run, seed and re-run, database tests). Triggers: pushes to `phase/day-04-database` and pull requests to `main`; read-only permissions; actions pinned by commit SHA; no repository secrets. |
+| `09fb7b9` *(on `phase/day-04-database`)* | Day 4 Step 6: GitHub Actions CI (`.github/workflows/ci.yml`): a checks job (lint, format, types, unit tests, build, `npm audit --audit-level=high`) and a database job on a fresh, disposable PostgreSQL (roles, migrations applied to an empty database and re-run, seed and re-run, database tests). Triggers: pushes to `phase/day-04-database` and pull requests to `main`; read-only permissions; actions pinned by commit SHA; no repository secrets. |
+| *(pending, `phase/day-04-database`)* | 10-day plan, Day 1, Phase 1A: auth packages (express-session 1.19.0, connect-pg-simple 10.0.0, @node-rs/argon2 2.2.1, helmet 8.3.0, express-rate-limit 8.7.0, with `ip-address` pinned to 10.7.2); `sessions` table and `hms_app` grant (migrations `0002`, `0003`); login, logout and `/api/auth/me`; lockout, rate limiting, CSRF, `requireAuth` and `requirePermission`; audit library; bootstrap administrator; `SESSION_SECRET` and `TRUST_PROXY` validation; helmet; the 10-day roadmap. 56 more unit tests and new database tests. |
+| *(pending, `phase/day-04-database`)* | 10-day plan, Day 1, Phase 1B: web foundation. Tailwind CSS 4.3.3 (with `@tailwindcss/vite`), React Router 8.4.0, TanStack Query 5.104.1, `radix-ui` 1.6.7, `clsx` 2.1.1 and `tailwind-merge` 3.7.0; API client with in-memory CSRF token and session-expiry handling; `AuthProvider`, `RequireAuth`, login page, protected app shell with permission-based navigation, sign-out, 403 and 404 pages; 34 more web tests. |

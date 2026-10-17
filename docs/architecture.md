@@ -109,5 +109,5 @@ The job is built on Day 9 (step 1) and extended on Day 13 (steps 2 and 3); see t
 ## 8. Frontend styling plan
 
 - **What we'll use:** Tailwind CSS for styling, and shadcn/ui for components. shadcn/ui copies component source into the repository, built on accessible Radix primitives, so there's no runtime UI kit to depend on. Theme colours are CSS variables, which leaves room for a dark mode later.
-- **When:** both are installed on **Day 6**, together with the web shell. Day 3's web app is a deliberately unstyled Vite + React + TypeScript skeleton, because nothing before Day 6 needs styling.
+- **When:** installed on 2026-10-17 (10-day plan, Day 1) with the login page and app shell. Components are written by hand in shadcn/ui style in `apps/web/src/components/ui/` (no CLI), on Radix primitives from the `radix-ui` package. Icons, toasts and animation helpers were deferred to keep dependencies minimal.
 - **Rules:** no other component library. Accessibility comes first: every interactive element is keyboard-reachable and labelled. Visual polish never takes time from the core workflows or from testing.

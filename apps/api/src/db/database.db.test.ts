@@ -9,7 +9,7 @@ const checksums = JSON.parse(
 
 const PRIVILEGES = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'];
 
-/** The approved hms_app privilege matrix (migration 0001). */
+/** The approved hms_app privilege matrix (migrations 0001 and 0003). */
 const HMS_APP_PRIVILEGES: Record<string, string[]> = {
   audit_logs: ['SELECT', 'INSERT'],
   departments: ['SELECT', 'INSERT', 'UPDATE'],
@@ -18,10 +18,11 @@ const HMS_APP_PRIVILEGES: Record<string, string[]> = {
   permissions: ['SELECT'],
   role_permissions: ['SELECT', 'INSERT', 'DELETE'],
   roles: ['SELECT', 'INSERT', 'UPDATE'],
+  sessions: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
   user_roles: ['SELECT', 'INSERT', 'DELETE'],
   users: ['SELECT', 'INSERT', 'UPDATE'],
 };
-const DELETABLE = ['role_permissions', 'user_roles'];
+const DELETABLE = ['role_permissions', 'sessions', 'user_roles'];
 
 let app!: pg.Client;
 let owner!: pg.Client;
@@ -80,7 +81,7 @@ describe('hms_app privileges', () => {
       ),
   );
 
-  it.each(DELETABLE)('can DELETE from %s (revoking an assignment)', (table) =>
+  it.each(DELETABLE)('can DELETE from %s (revoking an assignment or ending a session)', (table) =>
     inRollback(app, async () => {
       await app.query(`DELETE FROM ${table} WHERE false`);
     }),

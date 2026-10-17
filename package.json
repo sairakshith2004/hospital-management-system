@@ -28,6 +28,7 @@
     "db:generate": "npm run db:generate -w @hospitalos/api --",
     "db:seed": "npm run db:seed -w @hospitalos/api",
     "db:seed:test": "npm run db:seed:test -w @hospitalos/api",
+    "db:bootstrap-admin": "npm run db:bootstrap-admin -w @hospitalos/api --",
     "test:db": "npm run test:db -w @hospitalos/api --"
   },
   "devDependencies": {
@@ -40,5 +41,8 @@
     "typescript": "6.0.3",
     "typescript-eslint": "8.71.2",
     "vitest": "5.0.4"
+  },
+  "overrides": {
+    "ip-address": "10.7.2"
   }
 }
