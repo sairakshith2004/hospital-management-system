@@ -41,9 +41,15 @@ export function createApp({
 }: AppOptions = {}): Express {
   const app = express();
   app.disable('x-powered-by');
+  // API responses hold user details and the CSRF token: never cache or revalidate them.
+  app.set('etag', false);
   app.set('trust proxy', trustProxy);
   app.use(helmet());
   app.use(requestId);
+  app.use((_req, res, next) => {
+    res.set('Cache-Control', 'no-store');
+    next();
+  });
   app.use(requestLog(logger));
   app.use(express.json({ limit: '100kb' }));
 

@@ -242,6 +242,11 @@ describe('GET /api/auth/me and session lifetime', () => {
         .set('Cookie', pair(cookieOf(signIn)));
       expect(me.status).toBe(200);
       expect(me.body).toEqual(signIn.body);
+      // Both carry the CSRF token: the browser must not store or revalidate them.
+      for (const res of [signIn, me]) {
+        expect(res.headers['cache-control']).toBe('no-store');
+        expect(res.headers.etag).toBeUndefined();
+      }
     }),
   );
 

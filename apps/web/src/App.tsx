@@ -1,18 +1,44 @@
-import { ApiStatus } from './ApiStatus';
+import { QueryClientProvider, type QueryClient } from '@tanstack/react-query';
+import type { RouteObject } from 'react-router';
+import { RouterProvider } from 'react-router/dom';
+import type { createBrowserRouter } from 'react-router';
+import { AppShell } from './app/AppShell';
+import { ForbiddenPage } from './app/ForbiddenPage';
+import { HomePage } from './app/HomePage';
+import { NotFoundPage } from './app/NotFoundPage';
+import { AuthProvider } from './features/auth/AuthProvider';
+import { LoginPage } from './features/auth/LoginPage';
+import { RequireAuth } from './features/auth/RequireAuth';
 
-export function App() {
+/** Every route except /login requires a session. */
+export const routes: RouteObject[] = [
+  { path: '/login', element: <LoginPage /> },
+  {
+    element: <RequireAuth />,
+    children: [
+      {
+        element: <AppShell />,
+        children: [
+          { index: true, element: <HomePage /> },
+          { path: 'forbidden', element: <ForbiddenPage /> },
+          { path: '*', element: <NotFoundPage /> },
+        ],
+      },
+    ],
+  },
+];
+
+export interface AppProps {
+  router: ReturnType<typeof createBrowserRouter>;
+  queryClient: QueryClient;
+}
+
+export function App({ router, queryClient }: AppProps) {
   return (
-    <>
-      <header className="site-header">
-        <h1>HospitalOS</h1>
-        <p className="tagline">Outpatient hospital management system</p>
-      </header>
-      <main>
-        <p className="notice" role="note">
-          Development build. Synthetic data only. Not for real patient information.
-        </p>
-        <ApiStatus />
-      </main>
-    </>
+    <QueryClientProvider client={queryClient}>
+      <AuthProvider>
+        <RouterProvider router={router} />
+      </AuthProvider>
+    </QueryClientProvider>
   );
 }
