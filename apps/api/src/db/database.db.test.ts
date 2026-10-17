@@ -9,12 +9,14 @@ const checksums = JSON.parse(
 
 const PRIVILEGES = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'];
 
-/** The approved hms_app privilege matrix (migrations 0001 and 0003). */
+/** The approved hms_app privilege matrix (migrations 0001, 0003 and 0005). */
 const HMS_APP_PRIVILEGES: Record<string, string[]> = {
   audit_logs: ['SELECT', 'INSERT'],
   departments: ['SELECT', 'INSERT', 'UPDATE'],
+  doctor_profiles: ['SELECT', 'INSERT', 'UPDATE'],
   employees: ['SELECT', 'INSERT', 'UPDATE'],
   hospital_settings: ['SELECT', 'UPDATE'],
+  patients: ['SELECT', 'INSERT', 'UPDATE'],
   permissions: ['SELECT'],
   role_permissions: ['SELECT', 'INSERT', 'DELETE'],
   roles: ['SELECT', 'INSERT', 'UPDATE'],
@@ -86,6 +88,14 @@ describe('hms_app privileges', () => {
       await app.query(`DELETE FROM ${table} WHERE false`);
     }),
   );
+
+  it('lets hms_app draw MRNs from patient_mrn_seq, and nothing else of it', async () => {
+    const { rows } = await app.query<{ usage: boolean; update: boolean }>(
+      `SELECT has_sequence_privilege('patient_mrn_seq', 'USAGE') AS usage,
+              has_sequence_privilege('patient_mrn_seq', 'UPDATE') AS update`,
+    );
+    expect(rows[0]).toEqual({ usage: true, update: false });
+  });
 });
 
 describe('audit_logs', () => {

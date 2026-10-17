@@ -37,6 +37,8 @@ export type ApiErrorCode =
   | 'BAD_REQUEST'
   | 'NOT_FOUND'
   | 'CONFLICT'
+  | 'DUPLICATE_SUSPECTED'
+  | 'STALE_VERSION'
   | 'INTERNAL_ERROR';
 
 export interface ApiErrorBody {
@@ -45,5 +47,6 @@ export interface ApiErrorBody {
     message: string;
     requestId: string;
     details?: { path: string; message: string }[];
+    data?: Record<string, unknown>;
   };
 }

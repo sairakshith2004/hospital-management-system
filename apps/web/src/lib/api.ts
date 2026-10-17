@@ -20,6 +20,10 @@ export class ApiError extends Error {
     readonly code: string,
     message: string,
     readonly requestId: string | null,
+    /** Field paths and rule messages from a 422 (never the submitted values). */
+    readonly details?: { path: string; message: string }[],
+    /** Extra data the API attached, e.g. duplicate candidates on a 409. */
+    readonly data?: Record<string, unknown>,
   ) {
     super(message);
   }
@@ -99,6 +103,8 @@ export async function apiFetch<T>(
     error?.code ?? 'HTTP_ERROR',
     error?.message ?? 'Something went wrong. Please try again.',
     error?.requestId ?? res.headers.get('X-Request-Id'),
+    error?.details,
+    error?.data,
   );
 }
 

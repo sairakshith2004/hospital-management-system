@@ -14,15 +14,25 @@ const CASCADE = new Set([
   'role_permissions.role_id',
   'role_permissions.permission_id',
 ]);
-const MUTABLE = ['hospital_settings', 'departments', 'employees', 'users', 'roles'];
+const MUTABLE = [
+  'hospital_settings',
+  'departments',
+  'employees',
+  'users',
+  'roles',
+  'patients',
+  'doctor_profiles',
+];
 
 describe('database schema', () => {
   it('defines exactly the expected tables', () => {
     expect([...configs.keys()].sort()).toEqual([
       'audit_logs',
       'departments',
+      'doctor_profiles',
       'employees',
       'hospital_settings',
+      'patients',
       'permissions',
       'role_permissions',
       'roles',

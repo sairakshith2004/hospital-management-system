@@ -2,5 +2,7 @@
   "0000_identity_settings_audit.sql": "708d3341f5dbc95e945b41037e220b0a4699a3cb32f7cd7b1b4b10a05099c224",
   "0001_triggers_and_grants.sql": "656da3a8f462489a0856fbc0275eb274cb715e859c679b3efd407ac00d495d77",
   "0002_sessions.sql": "ea240ef62dc6be6d26bd18bb8e6817238c9cf44cf95c5386e6dec36b2851cf60",
-  "0003_sessions_grants.sql": "d63761510fd7515bec8110c954099a33bf7c2905df0e70bdf70ba33358f28c00"
+  "0003_sessions_grants.sql": "d63761510fd7515bec8110c954099a33bf7c2905df0e70bdf70ba33358f28c00",
+  "0004_patients_doctors.sql": "1d65a21b4f053057a63db7198f8e1387df20a66e84de5d87feb6ed4cbe8a992c",
+  "0005_patients_doctors_grants.sql": "bb6ea78c4384d74529ebf2ff2da0d0a770686c33310971a778fe1d5606bb0aa9"
 }

@@ -29,6 +29,20 @@
       "when": 1792215115255,
       "tag": "0003_sessions_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1792219420688,
+      "tag": "0004_patients_doctors",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1792219421069,
+      "tag": "0005_patients_doctors_grants",
+      "breakpoints": true
     }
   ]
 }

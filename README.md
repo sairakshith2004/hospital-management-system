@@ -37,6 +37,7 @@ This README is updated with every change, so it always describes how the project
 | Day 3: project foundation | ✅ Done, merged to `main` (PRs #2 and #3). CI was added in Day 4 Step 6. |
 | Scope alignment (C1–C4) | ✅ Done, merged to `main` (PR #4) |
 | Day 4: database schema and migrations | 🚧 In progress on `phase/day-04-database`. Step 1 (role reconciliation) is committed. Step 2a (database tooling: packages, role and migration scripts, environment checks) is written and checked locally. Step 2b (role setup) is done: `hms_owner` and `hms_app` exist on `hms_dev` and `hms_test` with the documented privileges, and `PUBLIC` access to both databases is removed. Step 3 (schema and first migrations) is applied to `hms_dev` and `hms_test`: nine identity, settings and audit tables, triggers, and exact `hms_app` grants. Step 4 (seed data and database tests) is done: reference data (settings, 80 permissions, 11 roles, 134 role permissions) is seeded into `hms_dev` and `hms_test`, and 30 database tests pass against `hms_test`. Step 5 is done: every API route is under `/api` (the temporary Vite rewrite is removed), errors share one JSON shape with a request ID, and structured pino logging keeps credentials and patient data out of logs. Step 6 (CI) is added: `.github/workflows/ci.yml` runs on pushes to `phase/day-04-database` and pull requests to `main`. |
+| **10-day plan, Day 2: patients and doctors** | ✅ On `phase/day-04-database`: migrations `0004` and `0005` applied to `hms_test` and `hms_dev` (after a verified `pg_dump` of `hms_dev`); demo data seeded into `hms_dev`; patient search, registration, details and the doctor directory checked in the browser. See [Patients and doctors](#patients-and-doctors). |
 | **10-day plan, Day 1: authentication** | 🚧 On `phase/day-04-database`, not yet committed. **Phase 1A (API):** `sessions` table (migrations `0002`, `0003`, applied to `hms_dev` and `hms_test`), login, logout and `/api/auth/me`, lockout, CSRF, permission middleware, audit library; the first administrator (`admin`) is bootstrapped in `hms_dev`. **Phase 1B (web):** Tailwind CSS, React Router and TanStack Query; login page, session-aware routing, protected app shell and sign-out, all against the real API. Interactive browser login still to be confirmed by the owner. |
 
 **What exists today:**
@@ -48,7 +49,7 @@ This README is updated with every change, so it always describes how the project
 - `apps/web`: a minimal React + TypeScript web app (Vite) with a HospitalOS landing screen and a live API-status indicator.
 - 189 automated tests that need no database (API and web), plus 55 database tests (`npm run test:db`) for privileges, the seed, authentication and the bootstrap administrator.
 
-**What doesn't exist yet:** every hospital feature: patients, scheduling, consultations, pharmacy, billing, lab and dashboards. See the [Roadmap](#roadmap).
+**What doesn't exist yet:** scheduling, appointments and every later hospital feature: patients, scheduling, consultations, pharmacy, billing, lab and dashboards. See the [Roadmap](#roadmap).
 
 ---
 
@@ -293,6 +294,24 @@ Server-side sessions stored in PostgreSQL ([ADR 0004](docs/adr/0004-session-auth
 - **Permissions:** routes use `requirePermission(db, 'code')` with the codes from `packages/shared`. Without a session: `401`. Without the permission: `403 FORBIDDEN` and an `access.denied` audit row.
 - **Audit:** `auth.login_succeeded`, `auth.login_failed`, `auth.locked`, `auth.logout`, `access.denied`, `user.created`. Audit rows never contain passwords, hashes, session IDs, cookies or CSRF tokens (`lib/audit.ts` refuses such keys).
 
+### Patients and doctors
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /api/patients?q=` | `patient:read_demographics` | At least 2 characters. Matches an MRN exactly, phone digits partially, or a name partially or fuzzily (trigram index). Up to 20 results. |
+| `GET /api/patients/:id` | `patient:read_demographics` | 404 for unknown or malformed IDs |
+| `POST /api/patients` | `patient:create` | 201 with the generated MRN. `409 DUPLICATE_SUSPECTED` (with the matching patients' MRN and name) when the phone and date of birth match an existing patient, unless the body has `confirmDuplicate: true`. Audited as `patient.created`. |
+| `PATCH /api/patients/:id` | `patient:update_demographics` | Send the `version` you read; a newer version gives `409 STALE_VERSION`. Audited as `patient.updated` with the changed field **names** only. |
+| `GET /api/doctors?departmentId=` | `schedule:read` | Active doctors with department, specialty, slot length and consultation fee (paise) |
+| `GET /api/departments` | signed in | Active departments |
+
+- **MRNs** (`MRN000001`…) come from a database sequence, so concurrent registrations never share one; the sequence stops at 999999 rather than ever repeating.
+- **Duplicates:** registrations for the same phone and date of birth take a transaction-scoped lock, so two simultaneous registrations of one person can't both slip past the check.
+- **Validation:** the same Zod schemas (`packages/shared/src/schemas/patients.ts`) run in the API (authoritative) and in the web forms. "Today" means today in the hospital time zone (Asia/Kolkata).
+- **Never deleted:** `hms_app` has no DELETE on patients or doctor profiles.
+
+**Demo data:** `npm run db:seed:demo` adds synthetic data to `hms_dev` only: 10 departments, staff with one account per role (`rec1`, `nur1`, `pha1`, `lab1`, `fin1`, `adm1`, `hr1`, `inv1`, `mkt1`, `doc1`–`doc6`), 6 doctor profiles and 40 patients (phones `90000xxxxx`). It asks once, at a hidden prompt, for the password of the new demo accounts and stores only its hash. It refuses in production or without an interactive terminal, never changes existing rows (so it never resets a password), and is safe to re-run.
+
 **First administrator:** `npm run db:bootstrap-admin -- --username <name>` creates one Super Admin (SA) in `hms_dev`, as `hms_app`. You type the password twice at a hidden prompt (12–256 characters); it is never an argument, never read from a pipe, never printed, and only its hash is stored. It refuses in production, without an interactive terminal, and whenever any SA account already exists, so it can never reset or duplicate an administrator. Recovering a lost administrator is a manual, superuser-only procedure and is deliberately not scripted.
 
 ---
@@ -484,6 +503,7 @@ Run these from the repository root.
 | `npm run db:generate` | Generates the next migration from the schema (offline; never connects). Add `-- --custom --name=…` for hand-written SQL |
 | `npm run db:seed` | Seeds reference data into `hms_dev` as `hms_owner` (settings, permissions, roles, role permissions). Safe to re-run |
 | `npm run db:seed:test` | The same for `hms_test` |
+| `npm run db:seed:demo` | Adds synthetic demo departments, staff accounts, doctors and patients to `hms_dev` (hidden password prompt; never changes existing rows) |
 | `npm run db:bootstrap-admin -- --username <name>` | Creates the first Super Admin in `hms_dev` with a hidden password prompt. Refuses if any administrator exists, in production, or without an interactive terminal |
 | `npm run test:db` | Runs the database tests against `hms_test` (rolled back; needs `.env` and the running database). Vitest options pass through, e.g. `npm run test:db -- --reporter=verbose` |
 
@@ -612,5 +632,6 @@ The 30-day plan was replaced on 2026-10-17 by a **10-day MVP plan**: [`docs/road
 | `790a55c` *(on `phase/day-04-database`, not pushed)* | Database-test harness: the test URLs must be `127.0.0.1` or `localhost` on port 5432 with no query parameters (also applies to `db:migrate:test`, `db:seed:test` and `db:env:check`); root `npm run test:db` forwards Vitest options. 9 more unit tests. |
 | `973b62f` *(on `phase/day-04-database`)* | Day 4 Step 5: every API route under `/api` (`GET /api/health`), and the temporary Vite rewrite removed; JSON 404s and one error shape `{ error: { code, message, requestId } }` with no internals exposed; `X-Request-Id` (reuses a valid UUID, otherwise generates one); pino 10.3.1 structured logging with an allowlisted request line, a database-safe error serializer and redaction; optional `LOG_LEVEL`. Smoke-checked live, directly and through the Vite proxy. 27 more tests. |
 | `09fb7b9` *(on `phase/day-04-database`)* | Day 4 Step 6: GitHub Actions CI (`.github/workflows/ci.yml`): a checks job (lint, format, types, unit tests, build, `npm audit --audit-level=high`) and a database job on a fresh, disposable PostgreSQL (roles, migrations applied to an empty database and re-run, seed and re-run, database tests). Triggers: pushes to `phase/day-04-database` and pull requests to `main`; read-only permissions; actions pinned by commit SHA; no repository secrets. |
-| *(pending, `phase/day-04-database`)* | 10-day plan, Day 1, Phase 1A: auth packages (express-session 1.19.0, connect-pg-simple 10.0.0, @node-rs/argon2 2.2.1, helmet 8.3.0, express-rate-limit 8.7.0, with `ip-address` pinned to 10.7.2); `sessions` table and `hms_app` grant (migrations `0002`, `0003`); login, logout and `/api/auth/me`; lockout, rate limiting, CSRF, `requireAuth` and `requirePermission`; audit library; bootstrap administrator; `SESSION_SECRET` and `TRUST_PROXY` validation; helmet; the 10-day roadmap. 56 more unit tests and new database tests. |
-| *(pending, `phase/day-04-database`)* | 10-day plan, Day 1, Phase 1B: web foundation. Tailwind CSS 4.3.3 (with `@tailwindcss/vite`), React Router 8.4.0, TanStack Query 5.104.1, `radix-ui` 1.6.7, `clsx` 2.1.1 and `tailwind-merge` 3.7.0; API client with in-memory CSRF token and session-expiry handling; `AuthProvider`, `RequireAuth`, login page, protected app shell with permission-based navigation, sign-out, 403 and 404 pages; 34 more web tests. |
+| `6732ecc` *(on `phase/day-04-database`)* | 10-day plan, Day 1, Phase 1A: auth packages (express-session 1.19.0, connect-pg-simple 10.0.0, @node-rs/argon2 2.2.1, helmet 8.3.0, express-rate-limit 8.7.0, with `ip-address` pinned to 10.7.2); `sessions` table and `hms_app` grant (migrations `0002`, `0003`); login, logout and `/api/auth/me`; lockout, rate limiting, CSRF, `requireAuth` and `requirePermission`; audit library; bootstrap administrator; `SESSION_SECRET` and `TRUST_PROXY` validation; helmet; the 10-day roadmap. 56 more unit tests and new database tests. |
+| `2779db2` *(on `phase/day-04-database`)* | 10-day plan, Day 1, Phase 1B: web foundation. Tailwind CSS 4.3.3 (with `@tailwindcss/vite`), React Router 8.4.0, TanStack Query 5.104.1, `radix-ui` 1.6.7, `clsx` 2.1.1 and `tailwind-merge` 3.7.0; API client with in-memory CSRF token and session-expiry handling; `AuthProvider`, `RequireAuth`, login page, protected app shell with permission-based navigation, sign-out, 403 and 404 pages; 34 more web tests. |
+| *(pending, `phase/day-04-database`)* | 10-day plan, Day 2 (migrations `0004`/`0005` applied to `hms_test` and `hms_dev`; demo data seeded into `hms_dev`): `patients` (sequence-generated MRN, duplicate warning with an identity lock, optimistic locking, trigram name search) and `doctor_profiles`; `GET/POST/PATCH /api/patients`, `GET /api/doctors`, `GET /api/departments` with permission checks and audit rows; shared Zod schemas used by API and web; `db:seed:demo` (synthetic departments, staff with one account per role, 6 doctors, 40 patients; hidden password prompt); patient search, registration, detail and edit pages and the doctor directory. |

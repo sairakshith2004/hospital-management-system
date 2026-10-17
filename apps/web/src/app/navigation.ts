@@ -8,7 +8,11 @@ export interface NavItem {
 }
 
 /** Modules add their entries here as they are built (patients on Day 2, and so on). */
-export const NAV_ITEMS: NavItem[] = [{ label: 'Home', path: '/', permission: null }];
+export const NAV_ITEMS: NavItem[] = [
+  { label: 'Home', path: '/', permission: null },
+  { label: 'Patients', path: '/patients', permission: 'patient:read_demographics' },
+  { label: 'Doctors', path: '/doctors', permission: 'schedule:read' },
+];
 
 export function visibleNavItems(
   can: (permission: PermissionCode) => boolean,

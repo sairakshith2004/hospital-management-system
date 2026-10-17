@@ -9,6 +9,8 @@ export class AppError extends Error {
     readonly status: number,
     readonly code: string,
     message: string,
+    /** Extra fields the client needs, e.g. duplicate candidates. Never secrets. */
+    readonly data?: Record<string, unknown>,
   ) {
     super(message);
   }

@@ -21,6 +21,7 @@
     "vite": "8.3.4"
   },
   "dependencies": {
+    "@hospitalos/shared": "*",
     "@tanstack/react-query": "5.104.1",
     "clsx": "2.1.1",
     "radix-ui": "1.6.7",

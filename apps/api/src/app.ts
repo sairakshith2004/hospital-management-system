@@ -10,6 +10,8 @@ import { createLoginLimiter } from './middleware/rate-limit.js';
 import { requestId } from './middleware/request-id.js';
 import { requestLog } from './middleware/request-log.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
+import { departmentRoutes, doctorRoutes } from './modules/directory/directory.routes.js';
+import { patientRoutes } from './modules/patients/patients.routes.js';
 
 export interface AppOptions {
   /** Defaults to a silent logger, so tests stay quiet unless they capture logs. */
@@ -64,6 +66,9 @@ export function createApp({
     app.use(loadUser(db));
     app.use(csrfProtection);
     api.use('/auth', authRoutes({ db, loginLimiter, production }));
+    api.use('/departments', departmentRoutes(db));
+    api.use('/doctors', doctorRoutes(db));
+    api.use('/patients', patientRoutes(db));
   }
   app.use('/api', api);
 
