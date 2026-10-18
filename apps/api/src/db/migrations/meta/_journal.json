@@ -43,6 +43,27 @@
       "when": 1792219421069,
       "tag": "0005_patients_doctors_grants",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1792222360063,
+      "tag": "0006_scheduling",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1792222360438,
+      "tag": "0007_scheduling_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1792224323378,
+      "tag": "0008_cancel_reason_required",
+      "breakpoints": true
     }
   ]
 }

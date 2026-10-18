@@ -9,17 +9,20 @@ const checksums = JSON.parse(
 
 const PRIVILEGES = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'];
 
-/** The approved hms_app privilege matrix (migrations 0001, 0003 and 0005). */
+/** The approved hms_app privilege matrix (migrations 0001, 0003, 0005 and 0007). */
 const HMS_APP_PRIVILEGES: Record<string, string[]> = {
+  appointments: ['SELECT', 'INSERT', 'UPDATE'],
   audit_logs: ['SELECT', 'INSERT'],
   departments: ['SELECT', 'INSERT', 'UPDATE'],
   doctor_profiles: ['SELECT', 'INSERT', 'UPDATE'],
+  doctor_schedules: ['SELECT', 'INSERT', 'UPDATE'],
   employees: ['SELECT', 'INSERT', 'UPDATE'],
   hospital_settings: ['SELECT', 'UPDATE'],
   patients: ['SELECT', 'INSERT', 'UPDATE'],
   permissions: ['SELECT'],
   role_permissions: ['SELECT', 'INSERT', 'DELETE'],
   roles: ['SELECT', 'INSERT', 'UPDATE'],
+  schedule_exceptions: ['SELECT', 'INSERT', 'UPDATE'],
   sessions: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
   user_roles: ['SELECT', 'INSERT', 'DELETE'],
   users: ['SELECT', 'INSERT', 'UPDATE'],
@@ -89,12 +92,14 @@ describe('hms_app privileges', () => {
     }),
   );
 
-  it('lets hms_app draw MRNs from patient_mrn_seq, and nothing else of it', async () => {
+  it('lets hms_app draw MRNs and appointment numbers from their sequences, and nothing else', async () => {
     const { rows } = await app.query<{ usage: boolean; update: boolean }>(
       `SELECT has_sequence_privilege('patient_mrn_seq', 'USAGE') AS usage,
-              has_sequence_privilege('patient_mrn_seq', 'UPDATE') AS update`,
+              has_sequence_privilege('patient_mrn_seq', 'UPDATE') AS update,
+              has_sequence_privilege('appointment_no_seq', 'USAGE') AS apt_usage,
+              has_sequence_privilege('appointment_no_seq', 'UPDATE') AS apt_update`,
     );
-    expect(rows[0]).toEqual({ usage: true, update: false });
+    expect(rows[0]).toEqual({ usage: true, update: false, apt_usage: true, apt_update: false });
   });
 });
 

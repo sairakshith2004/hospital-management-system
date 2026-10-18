@@ -22,20 +22,26 @@ const MUTABLE = [
   'roles',
   'patients',
   'doctor_profiles',
+  'doctor_schedules',
+  'schedule_exceptions',
+  'appointments',
 ];
 
 describe('database schema', () => {
   it('defines exactly the expected tables', () => {
     expect([...configs.keys()].sort()).toEqual([
+      'appointments',
       'audit_logs',
       'departments',
       'doctor_profiles',
+      'doctor_schedules',
       'employees',
       'hospital_settings',
       'patients',
       'permissions',
       'role_permissions',
       'roles',
+      'schedule_exceptions',
       'sessions',
       'user_roles',
       'users',
