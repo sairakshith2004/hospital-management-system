@@ -9,9 +9,16 @@ import { errorHandler, notFound } from './middleware/error-handler.js';
 import { createLoginLimiter } from './middleware/rate-limit.js';
 import { requestId } from './middleware/request-id.js';
 import { requestLog } from './middleware/request-log.js';
+import { adminRoutes } from './modules/admin/admin.routes.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
+import { billingRoutes } from './modules/billing/billing.routes.js';
+import { clinicalRoutes } from './modules/clinical/clinical.routes.js';
 import { departmentRoutes, doctorRoutes } from './modules/directory/directory.routes.js';
+import { inventoryRoutes } from './modules/inventory/inventory.routes.js';
+import { operationsRoutes } from './modules/operations/operations.routes.js';
+import { labRoutes } from './modules/lab/lab.routes.js';
 import { patientRoutes } from './modules/patients/patients.routes.js';
+import { pharmacyRoutes } from './modules/pharmacy/pharmacy.routes.js';
 import {
   appointmentRoutes,
   queueRoutes,
@@ -77,6 +84,13 @@ export function createApp({
     api.use('/patients', patientRoutes(db));
     api.use('/appointments', appointmentRoutes(db));
     api.use('/queue', queueRoutes(db));
+    api.use(inventoryRoutes(db));
+    api.use(clinicalRoutes(db));
+    api.use(pharmacyRoutes(db));
+    api.use(labRoutes(db));
+    api.use(billingRoutes(db));
+    api.use(adminRoutes(db));
+    api.use(operationsRoutes(db));
   }
   app.use('/api', api);
 

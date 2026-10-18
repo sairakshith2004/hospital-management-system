@@ -1,4 +1,4 @@
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { act } from 'react';
 import { apiFetch, hasCsrfToken } from './lib/api';
@@ -6,7 +6,8 @@ import { CSRF, apiError, fakeApi, json, makeUser, renderApp, session } from './t
 
 const signedOut = () => apiError(401, 'UNAUTHENTICATED', 'Authentication required');
 
-async function fillAndSubmit(username: string, password: string) {
+async function fillAndSubmit(username: string, password: string, portal = 'Reception') {
+  fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^${portal}`) }));
   fireEvent.change(await screen.findByLabelText('Username'), { target: { value: username } });
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: password } });
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
@@ -25,7 +26,7 @@ describe('startup session check', () => {
   it('remembers the requested page as ?next= when redirecting to login', async () => {
     fakeApi({ 'GET /api/auth/me': signedOut });
     const { router } = renderApp('/forbidden?x=1');
-    await screen.findByLabelText('Username');
+    await screen.findByRole('navigation', { name: 'Sign-in portals' });
     expect(router.state.location.search).toBe(`?next=${encodeURIComponent('/forbidden?x=1')}`);
   });
 
@@ -33,7 +34,7 @@ describe('startup session check', () => {
     fakeApi({ 'GET /api/auth/me': () => json(200, session()) });
     renderApp('/');
     expect(await screen.findByRole('heading', { name: 'Welcome, Test Receptionist' })).toBeTruthy();
-    expect(screen.getByText('REC')).toBeTruthy();
+    expect(screen.getByText('Receptionist')).toBeTruthy();
     expect(hasCsrfToken()).toBe(true);
   });
 
@@ -112,6 +113,53 @@ describe('login page (real API contract)', () => {
     expect((screen.getByLabelText('Username') as HTMLInputElement).disabled).toBe(true);
     finish(json(200, session()));
     expect(await screen.findByRole('heading', { name: /Welcome/ })).toBeTruthy();
+  });
+
+  it('offers a portal per department before showing the form', async () => {
+    fakeApi({ 'GET /api/auth/me': signedOut });
+    const { router } = renderApp('/login?next=%2Fpatients');
+    const portals = await screen.findByRole('navigation', { name: 'Sign-in portals' });
+    for (const name of ['Reception', 'Doctor', 'Pharmacy', 'Laboratory', 'Administration']) {
+      expect(within(portals).getByRole('button', { name: new RegExp(`^${name}`) })).toBeTruthy();
+    }
+    expect(screen.queryByLabelText('Username')).toBeNull();
+    fireEvent.click(within(portals).getByRole('button', { name: /^Doctor/ }));
+    expect(await screen.findByRole('heading', { name: 'Doctor sign in' })).toBeTruthy();
+    expect(router.state.location.search).toContain('portal=doctor');
+    expect(router.state.location.search).toContain('next=%2Fpatients');
+    fireEvent.click(screen.getByRole('button', { name: 'Change' }));
+    expect(await screen.findByRole('navigation', { name: 'Sign-in portals' })).toBeTruthy();
+  });
+
+  it('signs straight out when the account does not belong to the chosen portal', async () => {
+    const api = fakeApi({
+      'GET /api/auth/me': signedOut,
+      'POST /api/auth/login': () => json(200, session()),
+      'POST /api/auth/logout': () => new Response(null, { status: 204 }),
+    });
+    const { router } = renderApp('/login');
+    await fillAndSubmit('zz_reception', 'synthetic-password', 'Doctor');
+    expect((await screen.findByRole('alert')).textContent).toMatch(
+      "This account isn't registered for the Doctor portal.",
+    );
+    expect(api.calls.some((c) => c.key === 'POST /api/auth/logout')).toBe(true);
+    expect(router.state.location.pathname).toBe('/login');
+    expect(hasCsrfToken()).toBe(false);
+  });
+
+  it('lets an account without a department use the Other staff portal', async () => {
+    fakeApi({
+      'GET /api/auth/me': signedOut,
+      'POST /api/auth/login': () => json(200, session(makeUser({ roles: [], permissions: [] }))),
+    });
+    renderApp('/login');
+    fireEvent.click(await screen.findByRole('button', { name: 'Other staff sign in' }));
+    fireEvent.change(await screen.findByLabelText('Username'), { target: { value: 'zz_new' } });
+    fireEvent.change(screen.getByLabelText('Password'), {
+      target: { value: 'synthetic-password' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    expect(await screen.findByText(/waiting for a role assignment/)).toBeTruthy();
   });
 
   it('ignores an off-site ?next= and goes home instead', async () => {

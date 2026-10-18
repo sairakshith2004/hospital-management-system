@@ -14,3 +14,15 @@ export function RequirePermission({
   const { can } = useAuth();
   return can(permission) ? children : <ForbiddenPage />;
 }
+
+/** Display only, like RequirePermission: the page opens if the user holds any of them. */
+export function RequireAnyPermission({
+  anyOf,
+  children,
+}: {
+  anyOf: PermissionCode[];
+  children: ReactNode;
+}) {
+  const { can } = useAuth();
+  return anyOf.some((p) => can(p)) ? children : <ForbiddenPage />;
+}

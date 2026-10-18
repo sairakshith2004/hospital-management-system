@@ -152,6 +152,8 @@ export const appointments = pgTable(
   (t) => [
     // Target of the same-patient composite keys below.
     unique('appointments_id_patient_id_key').on(t.id, t.patientId),
+    // Target of encounters' key: an encounter's doctor is always its appointment's doctor.
+    unique('appointments_id_patient_doctor_key').on(t.id, t.patientId, t.doctorId),
     foreignKey({
       name: 'appointments_schedule_doctor_fk',
       columns: [t.doctorScheduleId, t.doctorId],

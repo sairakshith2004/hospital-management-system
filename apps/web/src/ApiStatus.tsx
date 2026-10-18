@@ -51,7 +51,7 @@ export function ApiStatus({ compact = false }: { compact?: boolean }) {
         type="button"
         onClick={() => void recheck()}
         disabled={status === 'checking'}
-        className="rounded text-teal-700 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-teal-600 disabled:opacity-50 dark:text-teal-400"
+        className="rounded text-brand-700 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-brand-600 disabled:opacity-50 dark:text-brand-400"
       >
         Check again
       </button>

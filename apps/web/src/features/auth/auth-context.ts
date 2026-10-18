@@ -11,7 +11,8 @@ export interface AuthContextValue {
    * expiry, deactivation), 'signedOut' after the user signed out. Null otherwise.
    */
   endReason: 'expired' | 'signedOut' | null;
-  login(credentials: LoginRequest): Promise<void>;
+  /** Resolves with the signed-in user (display only: the server checks every permission). */
+  login(credentials: LoginRequest): Promise<SessionUser>;
   logout(): Promise<void>;
   /** Display only: the server checks every permission again. */
   can(permission: PermissionCode): boolean;

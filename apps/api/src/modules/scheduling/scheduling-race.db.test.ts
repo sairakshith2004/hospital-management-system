@@ -8,10 +8,11 @@
  *     ZZ_RACE_API, employee ZZ-RACE-API-REC and REC user zz_race_api_rec. They stay because
  *     the append-only audit rows these tests write reference the user (actor_user_id is
  *     ON DELETE RESTRICT). Foreign keys and audit triggers are not changed for cleanup.
- *   - Audit rows written by the API (logins, appointment.created/checked_in/rescheduled)
- *     stay in hms_test. Each run adds a fixed, small number of them.
- *   - Everything else this file creates (doctor, schedule, patients, appointments,
- *     sessions) is deleted by ID, as hms_owner, in afterAll.
+ *   - Audit rows written by the API (login, appointment.created/checked_in/rescheduled and
+ *     the invoice.created row of each check-in's draft invoice) stay in hms_test: a fixed
+ *     24 per run.
+ *   - Everything else this file creates (doctor, schedule, patients, appointments, the
+ *     check-ins' draft invoices, sessions) is deleted by ID, as hms_owner, in afterAll.
  * No real patient data. CI runs these on a fresh, disposable database every time.
  */
 import { hospitalToday } from '@hospitalos/shared';
@@ -130,8 +131,18 @@ beforeAll(async () => {
 
 afterAll(async () => {
   try {
-    // Exactly the rows this file created; successors before the appointments they replace.
+    // Exactly the rows this file created. Check-in charges the consultation on a draft
+    // invoice, so those invoices (and their lines) go first, then successor appointments
+    // before the appointments they replace.
     if (created.appointments.length > 0) {
+      await owner.query(
+        `DELETE FROM invoice_items WHERE invoice_id IN
+           (SELECT id FROM invoices WHERE appointment_id = ANY($1::uuid[]))`,
+        [created.appointments],
+      );
+      await owner.query('DELETE FROM invoices WHERE appointment_id = ANY($1::uuid[])', [
+        created.appointments,
+      ]);
       await owner.query(
         `DELETE FROM appointments WHERE id = ANY($1::uuid[]) AND rescheduled_from_id IS NOT NULL`,
         [created.appointments],

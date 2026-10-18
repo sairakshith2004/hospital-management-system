@@ -90,7 +90,7 @@ export function PatientSearchPage() {
                 <Td className="font-mono">{p.mrn}</Td>
                 <Td>
                   <Link
-                    className="text-teal-700 hover:underline dark:text-teal-400"
+                    className="text-brand-700 hover:underline dark:text-brand-400"
                     to={`/patients/${p.id}`}
                   >
                     {p.firstName} {p.lastName}

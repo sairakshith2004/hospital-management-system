@@ -14,6 +14,11 @@ import { withTransaction, type Database, type Queryable } from '../../db/client.
 import { recordAudit, type AuditContext } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import {
+  addInvoiceLine,
+  deactivateSourceLine,
+  draftInvoiceForVisit,
+} from '../billing/billing.repo.js';
+import {
   deactivateSchedule,
   findActiveDoctor,
   findAppointment,
@@ -94,6 +99,31 @@ async function loaded(tx: Queryable, id: string): Promise<AppointmentDetail> {
   return (await findAppointment(tx, id))!;
 }
 
+/**
+ * Adds the doctor's consultation fee to the visit's draft invoice, copied at this moment
+ * (later fee changes don't alter it). Runs inside the check-in / walk-in transaction.
+ */
+async function chargeConsultation(
+  tx: Queryable,
+  v: { appointmentId: string; patientId: string; doctorId: string; userId: string },
+  context: AuditContext,
+) {
+  const { rows } = await tx.query<{ fee: number; name: string }>(
+    `SELECT d.consultation_fee_paise::int AS fee, e.full_name AS name
+     FROM doctor_profiles d JOIN employees e ON e.id = d.employee_id WHERE d.id = $1`,
+    [v.doctorId],
+  );
+  const invoiceId = await draftInvoiceForVisit(tx, v, context);
+  await addInvoiceLine(tx, invoiceId, {
+    sourceType: 'consultation',
+    description: `Consultation — ${rows[0]!.name}`,
+    consultationAppointmentId: v.appointmentId,
+    qty: 1,
+    unitPricePaise: rows[0]!.fee,
+    userId: v.userId,
+  });
+}
+
 export async function createAppointment(
   db: Database,
   input: CreateAppointmentInput,
@@ -132,6 +162,16 @@ export async function createAppointment(
           rescheduledFromId: null,
           userId: actor.userId,
         });
+        await chargeConsultation(
+          tx,
+          {
+            appointmentId: id,
+            patientId: input.patientId,
+            doctorId: doctor.id,
+            userId: actor.userId,
+          },
+          context,
+        );
       } else {
         const slot = await requireSlot(tx, doctor.id, input.slotStart);
         const booking = {
@@ -224,6 +264,9 @@ export async function cancelAppointment(
   return withTransaction(db, async (tx) => {
     const row = await lockForTransition(tx, id, 'cancelled');
     await setStatus(tx, id, 'cancelled', actor.userId, { cancelReason: reason });
+    // After check-in the visit was already charged: remove the fee while the invoice is a draft.
+    if (row.status === 'checked_in')
+      await deactivateSourceLine(tx, { consultationAppointmentId: id });
     await audited(tx, row, 'appointment.cancelled', actor, context, { fields: 'cancel_reason' });
     return loaded(tx, id);
   });
@@ -260,6 +303,11 @@ export async function checkIn(
     }
     const tokenNo = await nextToken(tx, row.doctorId, row.visitDate);
     await setStatus(tx, id, 'checked_in', actor.userId, { tokenNo });
+    await chargeConsultation(
+      tx,
+      { appointmentId: id, patientId: row.patientId, doctorId: row.doctorId, userId: actor.userId },
+      context,
+    );
     await audited(tx, row, 'appointment.checked_in', actor, context, {
       // "queueNo": the audit library refuses keys that look like secrets (/token/i).
       queueNo: tokenNo,

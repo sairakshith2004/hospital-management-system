@@ -5,3 +5,7 @@ export * from './sessions.js';
 export * from './patients.js';
 export * from './doctors.js';
 export * from './scheduling.js';
+export * from './inventory.js';
+export * from './clinical.js';
+export * from './billing.js';
+export * from './operations.js';

@@ -9,23 +9,67 @@ const checksums = JSON.parse(
 
 const PRIVILEGES = ['SELECT', 'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE', 'REFERENCES', 'TRIGGER'];
 
-/** The approved hms_app privilege matrix (migrations 0001, 0003, 0005 and 0007). */
+/**
+ * The approved hms_app privilege matrix (migrations 0001, 0003, 0005, 0007, 0010, 0012, 0014
+ * and 0016). vital_signs and lab_results also have a single-column UPDATE (tested below).
+ */
 const HMS_APP_PRIVILEGES: Record<string, string[]> = {
+  allergies: ['SELECT', 'INSERT', 'UPDATE'],
   appointments: ['SELECT', 'INSERT', 'UPDATE'],
+  attendance: ['SELECT', 'INSERT', 'UPDATE'],
   audit_logs: ['SELECT', 'INSERT'],
+  campaigns: ['SELECT', 'INSERT', 'UPDATE'],
+  clinical_notes: ['SELECT', 'INSERT'],
   departments: ['SELECT', 'INSERT', 'UPDATE'],
+  diagnoses: ['SELECT', 'INSERT', 'UPDATE'],
+  dispensing_lines: ['SELECT', 'INSERT'],
+  dispensings: ['SELECT', 'INSERT'],
   doctor_profiles: ['SELECT', 'INSERT', 'UPDATE'],
   doctor_schedules: ['SELECT', 'INSERT', 'UPDATE'],
+  document_counters: ['SELECT', 'INSERT', 'UPDATE'],
   employees: ['SELECT', 'INSERT', 'UPDATE'],
+  encounters: ['SELECT', 'INSERT', 'UPDATE'],
+  enquiries: ['SELECT', 'INSERT', 'UPDATE'],
+  enquiry_follow_ups: ['SELECT', 'INSERT', 'UPDATE'],
+  equipment: ['SELECT', 'INSERT', 'UPDATE'],
+  expense_categories: ['SELECT', 'INSERT', 'UPDATE'],
+  expenses: ['SELECT', 'INSERT', 'UPDATE'],
+  follow_ups: ['SELECT', 'INSERT', 'UPDATE'],
+  goods_receipts: ['SELECT', 'INSERT'],
+  grn_lines: ['SELECT', 'INSERT'],
   hospital_settings: ['SELECT', 'UPDATE'],
+  ingredients: ['SELECT', 'INSERT', 'UPDATE'],
+  invoice_items: ['SELECT', 'INSERT', 'UPDATE'],
+  invoices: ['SELECT', 'INSERT', 'UPDATE'],
+  lab_orders: ['SELECT', 'INSERT', 'UPDATE'],
+  lab_results: ['SELECT', 'INSERT'],
+  lab_test_parameters: ['SELECT', 'INSERT', 'UPDATE'],
+  lab_tests: ['SELECT', 'INSERT', 'UPDATE'],
+  leave_requests: ['SELECT', 'INSERT', 'UPDATE'],
+  locations: ['SELECT', 'INSERT', 'UPDATE'],
+  maintenance_logs: ['SELECT', 'INSERT'],
+  medicine_products: ['SELECT', 'INSERT', 'UPDATE'],
   patients: ['SELECT', 'INSERT', 'UPDATE'],
+  payments: ['SELECT', 'INSERT'],
   permissions: ['SELECT'],
+  prescription_items: ['SELECT', 'INSERT', 'UPDATE'],
+  prescriptions: ['SELECT', 'INSERT', 'UPDATE'],
+  product_ingredients: ['SELECT', 'INSERT'],
+  referral_sources: ['SELECT', 'INSERT', 'UPDATE'],
   role_permissions: ['SELECT', 'INSERT', 'DELETE'],
   roles: ['SELECT', 'INSERT', 'UPDATE'],
   schedule_exceptions: ['SELECT', 'INSERT', 'UPDATE'],
+  service_catalogue: ['SELECT', 'INSERT', 'UPDATE'],
   sessions: ['SELECT', 'INSERT', 'UPDATE', 'DELETE'],
+  stock_batches: ['SELECT', 'INSERT', 'UPDATE'],
+  stock_items: ['SELECT', 'INSERT', 'UPDATE'],
+  stock_movements: ['SELECT', 'INSERT'],
+  stock_transfer_lines: ['SELECT', 'INSERT', 'UPDATE'],
+  stock_transfers: ['SELECT', 'INSERT', 'UPDATE'],
+  suppliers: ['SELECT', 'INSERT', 'UPDATE'],
   user_roles: ['SELECT', 'INSERT', 'DELETE'],
   users: ['SELECT', 'INSERT', 'UPDATE'],
+  vital_signs: ['SELECT', 'INSERT'],
 };
 const DELETABLE = ['role_permissions', 'sessions', 'user_roles'];
 
@@ -91,6 +135,43 @@ describe('hms_app privileges', () => {
       await app.query(`DELETE FROM ${table} WHERE false`);
     }),
   );
+
+  it('may update only vital_signs.entered_in_error and lab_results.is_current, column by column', async () => {
+    const { rows } = await app.query<{ col: string }>(
+      `SELECT table_name || '.' || column_name AS col FROM information_schema.column_privileges
+       WHERE grantee = 'hms_app' AND privilege_type = 'UPDATE'
+         AND table_name IN ('vital_signs', 'lab_results') ORDER BY 1`,
+    );
+    expect(rows.map((r) => r.col)).toEqual([
+      'lab_results.is_current',
+      'vital_signs.entered_in_error',
+    ]);
+  });
+
+  it('may use exactly the document-number sequences', async () => {
+    const { rows } = await app.query<{ seq: string; usage: boolean; update: boolean }>(
+      `SELECT c.relname AS seq, has_sequence_privilege(c.oid, 'USAGE') AS usage,
+              has_sequence_privilege(c.oid, 'UPDATE') AS update
+       FROM pg_class c WHERE c.relnamespace = 'public'::regnamespace AND c.relkind = 'S'
+       ORDER BY 1`,
+    );
+    for (const r of rows) {
+      expect(r.update, r.seq).toBe(false);
+      expect(r.usage, r.seq).toBe(!r.seq.endsWith('_id_seq'));
+    }
+    expect(rows.filter((r) => r.usage).map((r) => r.seq)).toEqual([
+      'appointment_no_seq',
+      'dispense_no_seq',
+      'encounter_no_seq',
+      'enquiry_no_seq',
+      'expense_no_seq',
+      'grn_no_seq',
+      'lab_order_no_seq',
+      'patient_mrn_seq',
+      'rx_no_seq',
+      'transfer_no_seq',
+    ]);
+  });
 
   it('lets hms_app draw MRNs and appointment numbers from their sequences, and nothing else', async () => {
     const { rows } = await app.query<{ usage: boolean; update: boolean }>(

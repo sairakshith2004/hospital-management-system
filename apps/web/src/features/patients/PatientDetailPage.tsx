@@ -43,6 +43,11 @@ export function PatientDetailPage() {
           <Button asChild variant="secondary">
             <Link to="/patients">Back to search</Link>
           </Button>
+          {can('appointment:book') && (
+            <Button asChild variant="secondary">
+              <Link to={`/appointments/new?patientId=${p.id}`}>Book appointment</Link>
+            </Button>
+          )}
           {can('patient:update_demographics') && (
             <Button asChild>
               <Link to={`/patients/${p.id}/edit`}>Edit</Link>

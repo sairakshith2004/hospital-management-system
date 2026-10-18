@@ -92,3 +92,45 @@ export function requirePermission(db: Queryable, permission: PermissionCode): Re
     next(new AppError(403, 'FORBIDDEN', 'You do not have permission to do this'));
   };
 }
+
+/** Like requirePermission, but any one of `permissions` is enough (403 and audited otherwise). */
+export function requireAnyPermission(db: Queryable, permissions: PermissionCode[]): RequestHandler {
+  return async (req, res, next) => {
+    const user = currentUser(res);
+    if (!user) return next(unauthenticated());
+    if (permissions.some((p) => user.can(p))) return next();
+    await recordAudit(
+      db,
+      {
+        actor: { type: 'user', userId: user.id },
+        action: 'access.denied',
+        entityType: 'route',
+        entityId: routeLabel(req),
+        changes: { permission: permissions },
+      },
+      auditContext(req, res),
+    );
+    next(new AppError(403, 'FORBIDDEN', 'You do not have permission to do this'));
+  };
+}
+
+/** For checks that depend on the record (e.g. a batch's location kind): 403 and audited. */
+export async function denyAccess(
+  db: Queryable,
+  req: Request,
+  res: Response,
+  permission: PermissionCode,
+): Promise<never> {
+  await recordAudit(
+    db,
+    {
+      actor: { type: 'user', userId: requireUser(res).id },
+      action: 'access.denied',
+      entityType: 'route',
+      entityId: routeLabel(req),
+      changes: { permission },
+    },
+    auditContext(req, res),
+  );
+  throw new AppError(403, 'FORBIDDEN', 'You do not have permission to do this');
+}

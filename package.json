@@ -29,6 +29,9 @@
     "db:seed": "npm run db:seed -w @hospitalos/api",
     "db:seed:test": "npm run db:seed:test -w @hospitalos/api",
     "db:seed:demo": "npm run db:seed:demo -w @hospitalos/api",
+    "db:seed:demo:schedules": "npm run db:seed:demo:schedules -w @hospitalos/api",
+    "db:seed:demo:catalogue": "npm run db:seed:demo:catalogue -w @hospitalos/api",
+    "db:seed:demo:formulary": "npm run db:seed:demo:formulary -w @hospitalos/api",
     "db:bootstrap-admin": "npm run db:bootstrap-admin -w @hospitalos/api --",
     "test:db": "npm run test:db -w @hospitalos/api --"
   },

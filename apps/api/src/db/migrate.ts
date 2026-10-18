@@ -4,14 +4,21 @@
  * Applies pending migrations from src/db/migrations as hms_owner. Forward-only:
  * Drizzle runs all pending migrations in one transaction and records them in
  * drizzle.__drizzle_migrations. An advisory lock stops two runs from overlapping.
- * Prints the target as role@host/database, never the connection string.
+ * Before anything else the server must confirm the session is hms_owner on the expected
+ * database. Prints the target as role@host/database, never the connection string.
  */
 import { existsSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import pg from 'pg';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import { migrate } from 'drizzle-orm/node-postgres/migrator';
-import { describeTarget, migrationUrl, parseMode, runScript } from './db-env.js';
+import {
+  assertConnectedTarget,
+  describeTarget,
+  migrationUrl,
+  parseMode,
+  runScript,
+} from './db-env.js';
 
 const MIGRATIONS_FOLDER = fileURLToPath(new URL('./migrations', import.meta.url));
 // Arbitrary constant shared by every db:migrate run.
@@ -39,6 +46,7 @@ async function main(): Promise<void> {
   const client = new pg.Client({ connectionString: url.href });
   await client.connect();
   try {
+    await assertConnectedTarget(client, mode, 'owner');
     await client.query('SELECT pg_advisory_lock($1)', [MIGRATION_LOCK_KEY]);
     try {
       const before = await appliedCount(client);
