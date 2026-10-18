@@ -3,6 +3,7 @@ import {
   DbConfigError,
   adminUrl,
   appUrl,
+  assertConnectedTarget,
   checkVar,
   describeTarget,
   migrationUrl,
@@ -173,5 +174,48 @@ describe('test database targets', () => {
       'TEST_MIGRATION_DATABASE_URL must point at 127.0.0.1:5432 or localhost:5432.',
     );
     expect(message).not.toContain(SECRET);
+  });
+});
+
+describe('assertConnectedTarget (what the server reports)', () => {
+  const probe = (rows: unknown[] | Error) => ({
+    query: () => (rows instanceof Error ? Promise.reject(rows) : Promise.resolve({ rows })),
+  });
+
+  it('accepts exactly the expected database and role', async () => {
+    await expect(
+      assertConnectedTarget(probe([{ database: 'hms_dev', user: 'hms_owner' }]), 'dev', 'owner'),
+    ).resolves.toBeUndefined();
+    await expect(
+      assertConnectedTarget(probe([{ database: 'hms_test', user: 'hms_app' }]), 'test', 'app'),
+    ).resolves.toBeUndefined();
+  });
+
+  it('refuses a wrong database or role, without echoing what the server said', async () => {
+    for (const row of [
+      { database: 'hms_test', user: 'hms_owner' },
+      { database: 'postgres', user: 'hms_owner' },
+      { database: 'hms_dev', user: 'hms_app' },
+      { database: 'hms_dev', user: 'hms' },
+      { database: 'HMS_DEV', user: 'hms_owner' },
+    ]) {
+      const run = assertConnectedTarget(probe([row]), 'dev', 'owner');
+      await expect(run, JSON.stringify(row)).rejects.toThrow(DbConfigError);
+      await expect(run).rejects.toThrow(
+        'Refused: could not confirm the connection is hms_owner on hms_dev. Nothing was changed.',
+      );
+    }
+  });
+
+  it('fails closed on a missing or unrecognised answer, or a failed query', async () => {
+    for (const p of [
+      probe([]),
+      probe([{}]),
+      probe([{ database: null, user: null }]),
+      probe([{ database: ['hms_dev'], user: 'hms_owner' }]),
+      probe(new Error('connection lost')),
+    ]) {
+      await expect(assertConnectedTarget(p, 'dev', 'owner')).rejects.toThrow(DbConfigError);
+    }
   });
 });

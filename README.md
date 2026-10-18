@@ -502,6 +502,7 @@ Phase 3A added three tables (migration `0006`, generated) and the rules Drizzle 
 - On a database seeded before Day 3 Phase 3B (80 permissions, 134 grants), a rerun only adds `appointment:reschedule`, `appointment:read_all` and their 3 grants (REC, REC, ADM), and writes one `seed.applied` audit row.
 - It never deletes anything. If a system role holds a permission the code doesn't grant, or the database has an unknown permission code, the seed stops, names the difference and changes nothing.
 - A run that changes something writes one `audit_logs` row (`actor_type = system`, `action = seed.applied`, counts only). A run that changes nothing writes none.
+- Before any write, it asks the server itself (`current_database()`, `current_user`) and refuses unless the session is exactly `hms_owner` on `hms_dev` (`db:seed`) or `hms_test` (`db:seed:test`). The URL checks alone only prove what was configured. A failed or unexpected answer also refuses, and nothing is changed (`assertConnectedTarget` in `src/db/db-env.ts`).
 - It prints counts and the target (`role@host:port/database`) only.
 - `permissions-matrix.test.ts` fails if `ROLE_PERMISSIONS` stops matching the matrix in `docs/permissions.md`.
 - Departments and the bootstrap Super Admin come on Day 5 with login.

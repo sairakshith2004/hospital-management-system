@@ -1,21 +1,31 @@
 /**
  * npm run db:seed (hms_dev) / npm run db:seed:test (hms_test)
  *
- * Seeds reference data as hms_owner in one transaction. Prints the target as
- * role@host:port/database and counts only.
+ * Seeds reference data as hms_owner in one transaction. Before any write it confirms, with
+ * the server itself, that the session is hms_owner on the expected database. Prints the
+ * target as role@host:port/database and counts only.
  */
 import pg from 'pg';
-import { describeTarget, migrationUrl, parseMode, runScript } from '../db-env.js';
+import {
+  assertConnectedTarget,
+  describeTarget,
+  migrationUrl,
+  parseMode,
+  runScript,
+} from '../db-env.js';
 import { seedReferenceData, type UpsertCounts } from './seed.js';
 
 const show = (c: UpsertCounts) =>
   `${c.inserted} inserted, ${c.updated} updated, ${c.unchanged} unchanged`;
 
 async function main(): Promise<void> {
-  const url = migrationUrl(parseMode(process.argv[2]));
+  const mode = parseMode(process.argv[2]);
+  const url = migrationUrl(mode);
   const client = new pg.Client({ connectionString: url.href });
   await client.connect();
   try {
+    // Before BEGIN and before any permission, role or grant change.
+    await assertConnectedTarget(client, mode, 'owner');
     await client.query('BEGIN');
     try {
       const r = await seedReferenceData(client);
