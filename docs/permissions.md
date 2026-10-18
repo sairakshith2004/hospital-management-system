@@ -51,8 +51,9 @@ In this table:
 | history:write (medical history entries) | | | | ◐ | | | | | | | |
 | schedule:read | | ● | ● | ● | ● | | | | | | ● |
 | schedule:manage, fee:manage, nurse_assignment:manage | | ● | | | | | | | | | |
-| appointment:book, appointment:cancel, appointment:check_in, appointment:mark_no_show, followup:schedule | | | ● | | | | | | | | |
-| queue:read | | ● | ● | ◐ | ◐ | | | | | | |
+| appointment:book, appointment:cancel, appointment:reschedule, appointment:check_in, appointment:mark_no_show, followup:schedule | | | ● | | | | | | | | |
+| appointment:read_all (every doctor's appointments and queues) | | ●¹² | ●¹² | | | | | | | | |
+| queue:read | | ● | ● | ◐¹² | ◐¹² | | | | | | |
 | encounter:write, prescription:create, prescription:cancel, lab_order:create, lab_order:cancel, followup:recommend | | | | ◐ | | | | | | | |
 | vitals:record | | | | ◐ | ◐ | | | | | | |
 | medicine:search (read-only) | | ● | | ● | ● | ● | | | | ● | |
@@ -125,6 +126,11 @@ Notes:
 9. A nurse may record allergies and current medications only for patients covered by the nurse rule in section 3.2 (assigned sessions only). This is the default; recording allergies early at triage improves the dispensing allergy check. Medical history, diagnoses and notes stay doctor-only.
 10. SA's audit viewer (C4) shows audit metadata (time, actor, action, entity, request ID, IP, changed field names, reason) and patient identifiers (patient ID and MRN). It never shows patient names, contact details or other demographics. Audit rows never contain clinical note contents. Every audit-log search writes exactly one `audit_log.searched` row, recording the searcher and filters. That row is written directly by the audit-viewer service, never by the generic audit hook, so writing it or later reading it never produces further audit rows.
 11. Settings are split by permission (C3). Each `hospital_settings` key belongs to exactly one permission (ERD section 3.1). SA changes system and security settings; ADM changes only the explicitly allowlisted operational settings. The key-to-permission map lives in `packages/shared` and the server enforces it on every settings request; the UI hiding a field is never relied on. A key outside the caller's permission returns 403, and an unknown key returns 422. There is no general-purpose settings permission.
+12. Appointment and queue visibility (Day 3):
+    - `queue:read` alone is **doctor-scoped**: the appointment list, appointment details and the queue show only appointments of the caller's own doctor profile (user → employee → `doctor_profiles`). A user with `queue:read`, no doctor profile and no `appointment:read_all` gets 403 and an `access.denied` audit row. This includes NUR until nurse session assignments (3.2) are built.
+    - `appointment:read_all` is the deliberate grant for seeing every doctor's appointments and queues. Only REC and ADM hold it. Its lists return scheduling fields and patient identifiers (MRN, name) only, never clinical data.
+    - A request for another doctor's appointment or queue without `appointment:read_all` returns 404, the same as an unknown ID, so the record's existence isn't revealed. It writes an `access.denied` audit row.
+    - `appointment:reschedule` is separate from `appointment:book` and `appointment:cancel`. A reschedule marks the original `rescheduled` and books the successor in one transaction; if the new slot is unavailable, nothing changes.
 
 ## 3. Patient-data access policy
 

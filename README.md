@@ -37,7 +37,7 @@ This README is updated with every change, so it always describes how the project
 | Day 3: project foundation | ✅ Done, merged to `main` (PRs #2 and #3). CI was added in Day 4 Step 6. |
 | Scope alignment (C1–C4) | ✅ Done, merged to `main` (PR #4) |
 | Day 4: database schema and migrations | 🚧 In progress on `phase/day-04-database`. Step 1 (role reconciliation) is committed. Step 2a (database tooling: packages, role and migration scripts, environment checks) is written and checked locally. Step 2b (role setup) is done: `hms_owner` and `hms_app` exist on `hms_dev` and `hms_test` with the documented privileges, and `PUBLIC` access to both databases is removed. Step 3 (schema and first migrations) is applied to `hms_dev` and `hms_test`: nine identity, settings and audit tables, triggers, and exact `hms_app` grants. Step 4 (seed data and database tests) is done: reference data (settings, 80 permissions, 11 roles, 134 role permissions) is seeded into `hms_dev` and `hms_test`, and 30 database tests pass against `hms_test`. Step 5 is done: every API route is under `/api` (the temporary Vite rewrite is removed), errors share one JSON shape with a request ID, and structured pino logging keeps credentials and patient data out of logs. Step 6 (CI) is added: `.github/workflows/ci.yml` runs on pushes to `phase/day-04-database` and pull requests to `main`. |
-| **10-day plan, Day 3: scheduling** | 🚧 In progress on `phase/day-04-database`. **Phase 3A (database) is done:** migrations `0006`–`0008` (doctor schedules, schedule exceptions and appointments; overlap exclusions, the appointment status-machine trigger, `hms_app` grants, cancellation reason required) are applied to `hms_dev` and `hms_test`, with constraint, trigger and concurrent double-booking database tests. No schedules or appointments exist in `hms_dev` yet. **Not started:** Phase 3B (scheduling API: availability, booking, cancel, reschedule, check-in, queues) and Phase 3C (booking and queue UI). See [Scheduling (Day 3)](#scheduling-day-3). |
+| **10-day plan, Day 3: scheduling** | 🚧 In progress on `phase/day-04-database`. **Phase 3A (database) is done:** migrations `0006`–`0008` (doctor schedules, schedule exceptions and appointments; overlap exclusions, the appointment status-machine trigger, `hms_app` grants, cancellation reason required) are applied to `hms_dev` and `hms_test`, with constraint, trigger and concurrent double-booking database tests. No schedules or appointments exist in `hms_dev` yet. **Phase 3B (scheduling API) written and tested, not yet committed:** availability, booking, walk-ins, cancel, reschedule, check-in tokens, no-shows, queues and doctor schedules, with doctor-scoped visibility (see [Scheduling API](#scheduling-api)). Two new permissions, `appointment:reschedule` (REC) and `appointment:read_all` (REC, ADM), are seeded into `hms_test` only; `hms_dev` still holds 80 permissions and 134 grants and has no doctor schedules. **Not started:** Phase 3C (booking and queue UI). See [Scheduling (Day 3)](#scheduling-day-3). |
 | **10-day plan, Day 2: patients and doctors** | ✅ Committed as `99dcda3` on `phase/day-04-database`: migrations `0004` and `0005` applied to `hms_test` and `hms_dev` (after a verified `pg_dump` of `hms_dev`); demo data seeded into `hms_dev`; patient search, registration, details and the doctor directory checked in the browser. See [Patients and doctors](#patients-and-doctors). |
 | **10-day plan, Day 1: authentication** | ✅ Committed as `6732ecc` (1A) and `2779db2` (1B) on `phase/day-04-database`. **Phase 1A (API):** `sessions` table (migrations `0002`, `0003`, applied to `hms_dev` and `hms_test`), login, logout and `/api/auth/me`, lockout, CSRF, permission middleware, audit library; the first administrator (`admin`) is bootstrapped in `hms_dev`. **Phase 1B (web):** Tailwind CSS, React Router and TanStack Query; login page, session-aware routing, protected app shell and sign-out, all against the real API. Interactive browser login still to be confirmed by the owner. |
 
@@ -45,12 +45,12 @@ This README is updated with every change, so it always describes how the project
 - Design documentation in `docs/`.
 - Root tooling: npm workspaces, TypeScript, ESLint, Prettier and Vitest.
 - A local PostgreSQL 17.11 database running in Docker.
-- `packages/shared`: role codes shared by API and web. `ROLE_CODES` lists the 11 approved roles (equipment is an INV permission group, not a role), and `permissions.ts`: the 80 permission codes and the role → permission map, checked against `docs/permissions.md`.
-- `apps/api`: an Express API with configuration validation, a `GET /api/health` liveness endpoint, request IDs, consistent JSON errors, structured redacted logging, security headers (helmet), and server-side session authentication with permission checks (see [Authentication](#authentication)), plus database tooling in `src/db/`: environment checks, a role bootstrap script and a migration runner, plus the Drizzle schema and migrations `0000`–`0008` (identity, settings, audit, sessions, patients, doctors and the scheduling tables, applied to `hms_dev` and `hms_test`, which are seeded with reference data). Patient and doctor-directory endpoints (see [Patients and doctors](#patients-and-doctors)).
+- `packages/shared`: role codes shared by API and web. `ROLE_CODES` lists the 11 approved roles (equipment is an INV permission group, not a role), and `permissions.ts`: the 82 permission codes and the role → permission map, checked against `docs/permissions.md`.
+- `apps/api`: an Express API with configuration validation, a `GET /api/health` liveness endpoint, request IDs, consistent JSON errors, structured redacted logging, security headers (helmet), and server-side session authentication with permission checks (see [Authentication](#authentication)), plus database tooling in `src/db/`: environment checks, a role bootstrap script and a migration runner, plus the Drizzle schema and migrations `0000`–`0008` (identity, settings, audit, sessions, patients, doctors and the scheduling tables, applied to `hms_dev` and `hms_test`, which are seeded with reference data). Patient and doctor-directory endpoints (see [Patients and doctors](#patients-and-doctors)) and the scheduling API (see [Scheduling API](#scheduling-api)).
 - `apps/web`: a React + TypeScript web app (Vite): login, protected app shell with permission-based navigation, patient search, registration, details and edit, and the doctor directory.
-- 227 automated tests in 28 files that need no database (API and web), plus 161 database tests in 9 files (`npm run test:db`) for privileges, the seed, authentication, patients, the bootstrap administrator and the scheduling constraints.
+- 235 automated tests in 29 files that need no database (API and web), plus 188 database tests in 11 files (`npm run test:db`) for privileges, the seed, authentication, patients, the bootstrap administrator, the scheduling constraints, the scheduling API and its races.
 
-**What doesn't exist yet:** the scheduling API and UI (availability, booking, check-in, queues; the tables exist, the endpoints don't), and every later hospital feature: consultations, pharmacy, billing, lab and dashboards. See the [Roadmap](#roadmap).
+**What doesn't exist yet:** the scheduling UI (the API exists), and every later hospital feature: consultations, pharmacy, billing, lab and dashboards. See the [Roadmap](#roadmap).
 
 ---
 
@@ -114,6 +114,13 @@ What's in the repository right now:
 │   │       │   ├── test-db.ts        Database-test helpers: hms_test-only connections, always-rolled-back transactions
 │   │       │   ├── *.db.test.ts      Database tests (run with npm run test:db)
 │   │       │   └── *.test.ts         Guard tests: wrong targets rejected, no secrets in output, no destructive SQL
+│   │       ├── modules/          One folder per feature: *.routes.ts (HTTP, permissions), *.service.ts
+│   │       │                     (transactions, audit), *.repo.ts (SQL), *.db.test.ts (API tests)
+│   │       │   ├── auth/           Login, logout, /api/auth/me, lockout and sessions
+│   │       │   ├── directory/      GET /api/departments and GET /api/doctors
+│   │       │   ├── patients/       Patient search, registration and demographic edits
+│   │       │   └── scheduling/     Availability, schedules, booking, walk-ins, cancel, reschedule,
+│   │       │                       check-in, no-show and queues, including the API race tests
 │   │       └── config/
 │   │           ├── env.ts        Zod schema for environment variables; loadEnv()
 │   │           └── env.test.ts   Tests for configuration validation
@@ -316,6 +323,30 @@ Server-side sessions stored in PostgreSQL ([ADR 0004](docs/adr/0004-session-auth
 
 **First administrator:** `npm run db:bootstrap-admin -- --username <name>` creates one Super Admin (SA) in `hms_dev`, as `hms_app`. You type the password twice at a hidden prompt (12–256 characters); it is never an argument, never read from a pipe, never printed, and only its hash is stored. It refuses in production, without an interactive terminal, and whenever any SA account already exists, so it can never reset or duplicate an administrator. Recovering a lost administrator is a manual, superuser-only procedure and is deliberately not scripted.
 
+### Scheduling API
+
+| Endpoint | Permission | Notes |
+|---|---|---|
+| `GET /api/doctors/:id/availability?date=` | `schedule:read` | The doctor's slots that day, from active weekly sessions, each with `available` (not taken, not on leave or blocked, not started). No patient data. |
+| `GET /api/doctors/:id/schedules` | `schedule:read` | Weekly sessions |
+| `POST /api/doctors/:id/schedules` | `schedule:manage` | `409 SCHEDULE_OVERLAP` if it overlaps an active session; `422 INVALID_SCHEDULE` if it can't fit one slot. Audited as `schedule.created`. |
+| `PATCH /api/doctors/:id/schedules/:scheduleId` | `schedule:manage` | Body `{ "active": false }` only: sessions are deactivated, never deleted. Audited. |
+| `POST /api/appointments` | `appointment:book` | `{ kind: "scheduled", patientId, doctorId, slotStart }` books a slot; `{ kind: "walk_in", patientId, doctorId }` registers a walk-in for today, checked in with the next token. Errors: `422 NOT_A_SLOT`, `422 SLOT_IN_PAST`, `409 DOCTOR_UNAVAILABLE`, `409 SLOT_TAKEN`, `409 PATIENT_BUSY`, `409 ALREADY_BOOKED`. Audited as `appointment.created`. |
+| `POST /api/appointments/:id/cancel` | `appointment:cancel` | `{ reason }` (1–200 characters) from `booked` or `checked_in`. The audit row records that a reason was given, never its text. |
+| `POST /api/appointments/:id/reschedule` | `appointment:reschedule` | `{ slotStart, doctorId? }`. One transaction: the original becomes `rescheduled` and a successor is booked with `rescheduledFromId`. If the new slot is unavailable or any step fails, nothing changes. Moving to the same doctor's same slot is `409 SAME_SLOT`. |
+| `POST /api/appointments/:id/check-in` | `appointment:check_in` | Today's `booked` appointments only (`409 NOT_TODAY`). Assigns the next token for that doctor and day. |
+| `POST /api/appointments/:id/no-show` | `appointment:mark_no_show` | `booked` appointments for today or earlier (`409 NOT_YET`) |
+| `GET /api/appointments?date=&doctorId=&status=` | `queue:read`, scoped | The day's appointments |
+| `GET /api/appointments/:id` | `queue:read`, scoped | One appointment, with cancellation and no-show details |
+| `GET /api/queue?date=&doctorId=` | `queue:read`, scoped | `checked_in` and `in_consultation` appointments in token order; `date` defaults to today |
+
+- **Scope** ([`docs/permissions.md`](docs/permissions.md) note 12): with `appointment:read_all` (REC, ADM) a caller sees every doctor; otherwise only their own doctor profile, and without one the answer is 403 with an `access.denied` audit row. Another doctor's appointment, queue or list answers **404, exactly like an unknown ID**, and writes an `access.denied` audit row.
+- **Fields:** lists, the queue and booking responses carry scheduling fields and the patient's ID, MRN and name only; never phone, date of birth, address or clinical data.
+- **State machine:** every status change locks the row (`SELECT … FOR UPDATE`) and checks [`docs/state-machines.md`](docs/state-machines.md) §1; a refused change is `409 INVALID_TRANSITION`. The database trigger enforces the same table.
+- **No double booking:** booking and rescheduling take transaction-scoped advisory locks for the doctor and the patient on that day (in a fixed order), then recheck availability, then insert. Competing bookings queue up, so the loser gets a clean `409 SLOT_TAKEN`. The exclusion constraints remain the second line of defence and are translated to the same `409` codes. A deadlock (`40P01`) is deliberately not translated: it would be a bug.
+- **Tokens:** check-in and walk-ins take a per-doctor, per-day advisory lock and use `max(token_no) + 1` in the same transaction, so tokens are gap-free and a rolled-back check-in uses none. A unique index on `(doctor_id, visit_date, token_no)` backs it up.
+- **Audit:** every change and its audit row commit together; a failed or refused request writes no success row.
+
 ---
 
 ## Running the web app
@@ -435,7 +466,7 @@ Limits: the table owner (`hms_owner`, used only for reviewed migrations) or a su
 
 ### Scheduling (Day 3)
 
-Phase 3A added three tables (migration `0006`, generated) and the rules Drizzle can't express (migration `0007`, hand-written), plus one stricter check (`0008`). The API and UI for them are not built yet (Phase 3B and 3C).
+Phase 3A added three tables (migration `0006`, generated) and the rules Drizzle can't express (migration `0007`, hand-written), plus one stricter check (`0008`). The API is described under [Scheduling API](#scheduling-api); the UI (Phase 3C) is not built yet.
 
 | Table | Holds |
 |---|---|
@@ -464,10 +495,11 @@ Phase 3A added three tables (migration `0006`, generated) and the rules Drizzle 
 | Data | Source | If it already exists |
 |---|---|---|
 | The `hospital_settings` row ("HospitalOS Demo Hospital", ERD defaults) | `seed.ts` | Left alone; settings changed later are never overwritten |
-| 80 permissions | `packages/shared/src/permissions.ts` | Description refreshed |
+| 82 permissions | `packages/shared/src/permissions.ts` | Description refreshed |
 | 11 system roles | `ROLE_NAMES` | Name refreshed |
-| 134 role permissions | `ROLE_PERMISSIONS` (● and ◐ cells of the matrix; ◐ conditions are enforced by services) | Missing ones added |
+| 137 role permissions | `ROLE_PERMISSIONS` (● and ◐ cells of the matrix; ◐ conditions are enforced by services) | Missing ones added |
 
+- On a database seeded before Day 3 Phase 3B (80 permissions, 134 grants), a rerun only adds `appointment:reschedule`, `appointment:read_all` and their 3 grants (REC, REC, ADM), and writes one `seed.applied` audit row.
 - It never deletes anything. If a system role holds a permission the code doesn't grant, or the database has an unknown permission code, the seed stops, names the difference and changes nothing.
 - A run that changes something writes one `audit_logs` row (`actor_type = system`, `action = seed.applied`, counts only). A run that changes nothing writes none.
 - It prints counts and the target (`role@host:port/database`) only.
@@ -479,7 +511,11 @@ Phase 3A added three tables (migration `0006`, generated) and the rules Drizzle 
 `npm run test:db` runs the `*.db.test.ts` files against `hms_test`. `npm test` skips them, so it never needs a database.
 
 - Connections use the same URL guards as the scripts, so they can only reach `hms_test`, as `hms_app` or `hms_owner`. `TEST_DATABASE_URL` and `TEST_MIGRATION_DATABASE_URL` must also point at `127.0.0.1` or `localhost` on an explicit port `5432`, with no query parameters (an omitted port would let `PGPORT` decide, and `?host=` would override the host). A development or remote URL is refused before any connection opens, and the error names only the variable and the rule. The same rules apply to `db:migrate:test`, `db:seed:test` and `db:env:check`.
-- Every test runs inside a transaction that's always rolled back. The only lasting effect is that `audit_logs_id_seq` advances, so audit ids in `hms_test` have gaps.
+- Every test runs inside a transaction that's always rolled back, except the race tests below. The only lasting effect of the rolled-back tests is that `audit_logs_id_seq` advances, so audit ids in `hms_test` have gaps.
+- **Race tests commit, because a race only shows once competing transactions commit** (approved exceptions):
+  - `src/db/booking-race.db.test.ts` (BK-2, SQL as `hms_app`): 10 simultaneous locked bookings of one slot (exactly 1 succeeds, 9 fail with `23P01`), and the exclusion constraint on its own with one blocked inserter. It writes no audit rows and deletes every row it created.
+  - `src/modules/scheduling/scheduling-race.db.test.ts` (through the real API on a connection pool): 10 simultaneous bookings of one slot (exactly one `201`, nine `409 SLOT_TAKEN`), 10 simultaneous check-ins (tokens 1–10), and two reschedule races. It deletes its doctor, schedule, patients, appointments and sessions afterwards.
+  - **Persistent fixtures in `hms_test`:** audit rows are append-only and reference their actor, so the API race test keeps one synthetic department `ZZ_RACE_API`, employee `ZZ-RACE-API-REC` and REC user `zz_race_api_rec` (created on the first run, reused afterwards), and each run adds exactly 14 audit rows (1 login, 1 booking, 10 check-ins, 2 reschedules). Foreign keys and audit triggers are never relaxed for cleanup. CI runs the suite on a fresh, disposable database.
 - They check:
   - the applied migrations match `checksums.json`
   - the exact `hms_app` privilege matrix
@@ -509,7 +545,7 @@ Run these from the repository root.
 | `npm run format` | Prettier: rewrites files to the project style |
 | `npm run format:check` | Prettier: checks only, changes nothing (used in CI) |
 | `npm run typecheck` | Type-checks every workspace that has a `typecheck` script |
-| `npm test` | Runs all Vitest tests (currently 227, in 28 files). Web tests run in a simulated browser (jsdom). No database or running server is needed. Database tests are excluded; see `npm run test:db`. |
+| `npm test` | Runs all Vitest tests (currently 235, in 29 files). Web tests run in a simulated browser (jsdom). No database or running server is needed. Database tests are excluded; see `npm run test:db`. |
 | `npm run dev:api` | Starts the API in watch mode at `http://127.0.0.1:3000` |
 | `npm run dev:web` | Starts the web app at `http://127.0.0.1:5173`, forwarding `/api/*` to the API |
 | `npm run build` | Builds every workspace that has a `build` script; today that's the web app, into `apps/web/dist/` |
@@ -655,4 +691,5 @@ The 30-day plan was replaced on 2026-10-17 by a **10-day MVP plan**: [`docs/road
 | `6732ecc` *(on `phase/day-04-database`)* | 10-day plan, Day 1, Phase 1A: auth packages (express-session 1.19.0, connect-pg-simple 10.0.0, @node-rs/argon2 2.2.1, helmet 8.3.0, express-rate-limit 8.7.0, with `ip-address` pinned to 10.7.2); `sessions` table and `hms_app` grant (migrations `0002`, `0003`); login, logout and `/api/auth/me`; lockout, rate limiting, CSRF, `requireAuth` and `requirePermission`; audit library; bootstrap administrator; `SESSION_SECRET` and `TRUST_PROXY` validation; helmet; the 10-day roadmap. 56 more unit tests and new database tests. |
 | `2779db2` *(on `phase/day-04-database`)* | 10-day plan, Day 1, Phase 1B: web foundation. Tailwind CSS 4.3.3 (with `@tailwindcss/vite`), React Router 8.4.0, TanStack Query 5.104.1, `radix-ui` 1.6.7, `clsx` 2.1.1 and `tailwind-merge` 3.7.0; API client with in-memory CSRF token and session-expiry handling; `AuthProvider`, `RequireAuth`, login page, protected app shell with permission-based navigation, sign-out, 403 and 404 pages; 34 more web tests. |
 | `99dcda3` *(on `phase/day-04-database`)* | 10-day plan, Day 2 (migrations `0004`/`0005` applied to `hms_test` and `hms_dev`; demo data seeded into `hms_dev`): `patients` (sequence-generated MRN, duplicate warning with an identity lock, optimistic locking, trigram name search) and `doctor_profiles`; `GET/POST/PATCH /api/patients`, `GET /api/doctors`, `GET /api/departments` with permission checks and audit rows; shared Zod schemas used by API and web; `db:seed:demo` (synthetic departments, staff with one account per role, 6 doctors, 40 patients; hidden password prompt); patient search, registration, detail and edit pages and the doctor directory. |
-| *(pending, `phase/day-04-database`)* | 10-day plan, Day 3, Phase 3A (migrations `0006`–`0008` applied to `hms_test` and `hms_dev`; no schedules or appointments seeded): `doctor_schedules`, `schedule_exceptions` and `appointments`; GiST exclusions against doctor and patient overlap and overlapping weekly sessions; appointment status-machine trigger; `hms_app` grants without DELETE; non-blank cancellation reason; shared appointment statuses and transitions; schema, privilege, constraint and trigger database tests and a 10-connection double-booking race test. |
+| `d6cc004` *(on `phase/day-04-database`)* | 10-day plan, Day 3, Phase 3A (migrations `0006`–`0008` applied to `hms_test` and `hms_dev`; no schedules or appointments seeded): `doctor_schedules`, `schedule_exceptions` and `appointments`; GiST exclusions against doctor and patient overlap and overlapping weekly sessions; appointment status-machine trigger; `hms_app` grants without DELETE; non-blank cancellation reason; shared appointment statuses and transitions; schema, privilege, constraint and trigger database tests and a 10-connection double-booking race test. |
+| *(pending, `phase/day-04-database`)* | 10-day plan, Day 3, Phase 3B: scheduling API in `apps/api/src/modules/scheduling/` (availability from weekly sessions, doctor schedules, booking, walk-ins, cancel, reschedule in one transaction, check-in with gap-free per-doctor tokens, no-shows, appointment lists and queues); transaction-scoped advisory locks before the availability recheck and insert, with the exclusion constraints as backstop; permissions `appointment:reschedule` (REC) and `appointment:read_all` (REC, ADM), seeded into `hms_test` only; doctor-scoped visibility (other doctors' records 404 with an `access.denied` row); audit rows in the same transaction as every change; BK-2 reworked (locked race plus a single-waiter constraint test); real-API race tests with persistent synthetic fixtures in `hms_test`; 8 more unit tests and 28 more database tests. |

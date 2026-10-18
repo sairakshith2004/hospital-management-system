@@ -2,7 +2,13 @@
 // (which has Node types) because packages/shared is also compiled for the browser.
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { PERMISSIONS, ROLE_CODES, ROLE_NAMES, ROLE_PERMISSIONS } from '@hospitalos/shared';
+import {
+  PERMISSIONS,
+  ROLE_CODES,
+  ROLE_NAMES,
+  ROLE_PERMISSIONS,
+  type PermissionCode,
+} from '@hospitalos/shared';
 
 /** The matrix in docs/permissions.md §2, read as { permission code → roles holding it }. */
 function matrixFromDocs(): Map<string, string[]> {
@@ -46,6 +52,20 @@ describe('permissions', () => {
       const fromDocs = codes.filter((code) => matrix.get(code)?.includes(role));
       expect(ROLE_PERMISSIONS[role], role).toEqual(fromDocs);
     }
+  });
+
+  it('keeps the scheduling permissions least-privilege (Day 3)', () => {
+    const holders = (code: PermissionCode) =>
+      ROLE_CODES.filter((r) => ROLE_PERMISSIONS[r].includes(code));
+    expect(holders('appointment:reschedule')).toEqual(['REC']);
+    expect(holders('appointment:read_all')).toEqual(['ADM', 'REC']);
+    // Rescheduling is its own permission, separate from booking and cancelling.
+    expect(holders('appointment:book')).toEqual(['REC']);
+    expect(holders('appointment:cancel')).toEqual(['REC']);
+    // Everyone else who reads the queue is limited to their own doctor's records.
+    expect(
+      holders('queue:read').filter((r) => !holders('appointment:read_all').includes(r)),
+    ).toEqual(['DOC', 'NUR']);
   });
 
   it('names all 11 roles and gives every role leave:request', () => {

@@ -12,6 +12,11 @@ import { requestLog } from './middleware/request-log.js';
 import { authRoutes } from './modules/auth/auth.routes.js';
 import { departmentRoutes, doctorRoutes } from './modules/directory/directory.routes.js';
 import { patientRoutes } from './modules/patients/patients.routes.js';
+import {
+  appointmentRoutes,
+  queueRoutes,
+  schedulingDoctorRoutes,
+} from './modules/scheduling/scheduling.routes.js';
 
 export interface AppOptions {
   /** Defaults to a silent logger, so tests stay quiet unless they capture logs. */
@@ -68,7 +73,10 @@ export function createApp({
     api.use('/auth', authRoutes({ db, loginLimiter, production }));
     api.use('/departments', departmentRoutes(db));
     api.use('/doctors', doctorRoutes(db));
+    api.use('/doctors', schedulingDoctorRoutes(db));
     api.use('/patients', patientRoutes(db));
+    api.use('/appointments', appointmentRoutes(db));
+    api.use('/queue', queueRoutes(db));
   }
   app.use('/api', api);
 
