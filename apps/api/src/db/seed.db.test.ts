@@ -77,7 +77,7 @@ describe('seedReferenceData (every test rolled back)', () => {
         settings: 'unchanged',
         permissions: { inserted: 2, updated: 0, unchanged: PERMISSIONS.length - 2 },
         roles: { inserted: 0, updated: 0, unchanged: 11 },
-        rolePermissions: { inserted: 3, unchanged: PAIR_COUNT - 3 },
+        rolePermissions: { inserted: 5, unchanged: PAIR_COUNT - 5 },
         audited: true,
       });
       const { rows } = await owner.query<{ pair: string }>(
@@ -90,6 +90,8 @@ describe('seedReferenceData (every test rolled back)', () => {
         'ADM appointment:read_all',
         'REC appointment:read_all',
         'REC appointment:reschedule',
+        'SA appointment:read_all', // the Super Admin oversees everything (permissions.md note 13)
+        'SA appointment:reschedule',
       ]);
     }));
 

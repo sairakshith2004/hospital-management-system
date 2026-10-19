@@ -36,6 +36,8 @@ export interface AppOptions {
   db?: Database;
   session?: RequestHandler;
   loginLimiter?: RequestHandler;
+  /** Self sign-up: 5 new accounts per IP per hour by default. */
+  signupLimiter?: RequestHandler;
   production?: boolean;
   /** Reverse-proxy hops to trust for req.ip (TRUST_PROXY). */
   trustProxy?: false | number;
@@ -51,6 +53,7 @@ export function createApp({
   db,
   session,
   loginLimiter = createLoginLimiter(),
+  signupLimiter = createLoginLimiter({ limit: 5, windowMs: 60 * 60 * 1000, countSuccesses: true }),
   production = false,
   trustProxy = false,
 }: AppOptions = {}): Express {
@@ -78,7 +81,7 @@ export function createApp({
     app.use(session);
     app.use(loadUser(db));
     app.use(csrfProtection);
-    api.use('/auth', authRoutes({ db, loginLimiter, production }));
+    api.use('/auth', authRoutes({ db, loginLimiter, signupLimiter, production }));
     api.use('/departments', departmentRoutes(db));
     api.use('/doctors', doctorRoutes(db));
     api.use('/doctors', schedulingDoctorRoutes(db));

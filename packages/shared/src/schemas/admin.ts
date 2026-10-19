@@ -37,6 +37,28 @@ export const createStaffSchema = z.strictObject({
   reason,
 });
 
+/**
+ * Self sign-up on the sign-in page. The account waits for an administrator's approval and
+ * has no role (so no access) until the Super Admin assigns one.
+ */
+export const signupSchema = z.strictObject({
+  fullName: text('Full name', 120),
+  username: z
+    .string()
+    .trim()
+    .regex(
+      USERNAME_RULE,
+      'Username: 3–50 lowercase letters, digits, . _ or -, starting with a letter',
+    ),
+  departmentId: z.uuid('Choose your department'),
+  designation: text('Job title', 80),
+  password: z
+    .string()
+    .min(12, 'Password: at least 12 characters')
+    .max(256, 'Password: at most 256 characters'),
+});
+export type SignupInput = z.infer<typeof signupSchema>;
+
 export const userStatusSchema = z.strictObject({ status: z.enum(['active', 'disabled']), reason });
 export const resetPasswordSchema = z.strictObject({ password, reason });
 export const roleChangeSchema = z.strictObject({

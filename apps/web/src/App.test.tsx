@@ -6,11 +6,17 @@ import { CSRF, apiError, fakeApi, json, makeUser, renderApp, session } from './t
 
 const signedOut = () => apiError(401, 'UNAUTHENTICATED', 'Authentication required');
 
-async function fillAndSubmit(username: string, password: string, portal = 'Reception') {
-  fireEvent.click(await screen.findByRole('button', { name: new RegExp(`^${portal}`) }));
+async function fillAndSubmit(username: string, password: string) {
   fireEvent.change(await screen.findByLabelText('Username'), { target: { value: username } });
   fireEvent.change(screen.getByLabelText('Password'), { target: { value: password } });
   fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+}
+
+/** Signs in, then opens a card on the portal cards page. */
+async function signInThrough(portal: string, username = 'zz_reception') {
+  await fillAndSubmit(username, 'synthetic-password');
+  const cards = await screen.findByRole('navigation', { name: 'Portals' });
+  fireEvent.click(within(cards).getByRole('button', { name: new RegExp(`^${portal}`) }));
 }
 
 describe('startup session check', () => {
@@ -18,7 +24,7 @@ describe('startup session check', () => {
     fakeApi({ 'GET /api/auth/me': signedOut });
     const { router } = renderApp('/');
     expect(screen.getByText('Checking your session…')).toBeTruthy();
-    expect(await screen.findByRole('heading', { name: 'HospitalOS' })).toBeTruthy();
+    expect(await screen.findByRole('heading', { name: 'Welcome back' })).toBeTruthy();
     expect(router.state.location.pathname).toBe('/login');
     expect(hasCsrfToken()).toBe(false);
   });
@@ -26,7 +32,7 @@ describe('startup session check', () => {
   it('remembers the requested page as ?next= when redirecting to login', async () => {
     fakeApi({ 'GET /api/auth/me': signedOut });
     const { router } = renderApp('/forbidden?x=1');
-    await screen.findByRole('navigation', { name: 'Sign-in portals' });
+    await screen.findByLabelText('Username');
     expect(router.state.location.search).toBe(`?next=${encodeURIComponent('/forbidden?x=1')}`);
   });
 
@@ -55,13 +61,16 @@ describe('startup session check', () => {
 });
 
 describe('login page (real API contract)', () => {
-  it('posts JSON credentials, then opens the requested page', async () => {
+  it('posts JSON credentials, shows the portal cards, then opens the requested page', async () => {
     const api = fakeApi({
       'GET /api/auth/me': signedOut,
       'POST /api/auth/login': () => json(200, session()),
     });
     const { router } = renderApp('/forbidden');
     await fillAndSubmit(' zz_reception ', 'synthetic-password');
+    expect(await screen.findByRole('heading', { name: 'Welcome, Test Receptionist' })).toBeTruthy();
+    expect(router.state.location.pathname).toBe('/portals');
+    fireEvent.click(screen.getByRole('button', { name: /^Reception/ }));
     expect(await screen.findByRole('heading', { name: /don't have access/ })).toBeTruthy();
     expect(router.state.location.pathname).toBe('/forbidden');
 
@@ -73,6 +82,55 @@ describe('login page (real API contract)', () => {
     expect(login.init.credentials).toBe('same-origin');
     expect(new Headers(login.init.headers).get('Content-Type')).toBe('application/json');
     expect(hasCsrfToken()).toBe(true);
+  });
+
+  it('shows one sign-in form first, with no portal choice before signing in', async () => {
+    fakeApi({ 'GET /api/auth/me': signedOut });
+    renderApp('/login');
+    expect(await screen.findByLabelText('Username')).toBeTruthy();
+    expect(screen.getByLabelText('Password')).toBeTruthy();
+    expect(screen.queryByRole('navigation', { name: 'Portals' })).toBeNull();
+  });
+
+  it('links to Create account, which explains that an administrator approves it', async () => {
+    fakeApi({
+      'GET /api/auth/me': signedOut,
+      'GET /api/auth/signup/departments': () =>
+        json(200, {
+          departments: [{ id: '00000000-0000-4000-8000-000000000001', name: 'Zz Dept' }],
+        }),
+      'POST /api/auth/signup': () => json(201, { status: 'pending' }),
+    });
+    const { router } = renderApp('/login');
+    fireEvent.click(await screen.findByRole('link', { name: 'Create an account' }));
+    expect(await screen.findByRole('heading', { name: 'Create your account' })).toBeTruthy();
+    expect(router.state.location.pathname).toBe('/signup');
+    await screen.findByRole('option', { name: 'Zz Dept' });
+    fireEvent.change(screen.getByLabelText('Full name'), { target: { value: 'Zz New' } });
+    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'zz.new' } });
+    fireEvent.change(screen.getByLabelText('Department'), {
+      target: { value: '00000000-0000-4000-8000-000000000001' },
+    });
+    fireEvent.change(screen.getByLabelText('Job title'), { target: { value: 'Nurse' } });
+    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'long-enough-pass' } });
+    fireEvent.change(screen.getByLabelText('Confirm password'), {
+      target: { value: 'long-enough-pass' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
+    expect(await screen.findByText(/A hospital administrator will approve it/)).toBeTruthy();
+    expect(router.state.location.pathname).toBe('/login');
+    expect((screen.getByLabelText('Username') as HTMLInputElement).value).toBe('zz.new');
+  });
+
+  it('tells a signed-up account that is still waiting for approval', async () => {
+    fakeApi({
+      'GET /api/auth/me': signedOut,
+      'POST /api/auth/login': () =>
+        apiError(403, 'ACCOUNT_PENDING', 'Your account is waiting for approval.'),
+    });
+    renderApp('/login');
+    await fillAndSubmit('zz.new', 'long-enough-pass');
+    expect((await screen.findByRole('alert')).textContent).toMatch(/waiting for approval/);
   });
 
   it('shows the generic message on 401 and clears the password', async () => {
@@ -112,62 +170,31 @@ describe('login page (real API contract)', () => {
     expect((button as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByLabelText('Username') as HTMLInputElement).disabled).toBe(true);
     finish(json(200, session()));
-    expect(await screen.findByRole('heading', { name: /Welcome/ })).toBeTruthy();
+    expect(await screen.findByRole('navigation', { name: 'Portals' })).toBeTruthy();
   });
 
-  it('offers a portal per department before showing the form', async () => {
-    fakeApi({ 'GET /api/auth/me': signedOut });
-    const { router } = renderApp('/login?next=%2Fpatients');
-    const portals = await screen.findByRole('navigation', { name: 'Sign-in portals' });
-    for (const name of ['Reception', 'Doctor', 'Pharmacy', 'Laboratory', 'Administration']) {
-      expect(within(portals).getByRole('button', { name: new RegExp(`^${name}`) })).toBeTruthy();
-    }
-    expect(screen.queryByLabelText('Username')).toBeNull();
-    fireEvent.click(within(portals).getByRole('button', { name: /^Doctor/ }));
-    expect(await screen.findByRole('heading', { name: 'Doctor sign in' })).toBeTruthy();
-    expect(router.state.location.search).toContain('portal=doctor');
-    expect(router.state.location.search).toContain('next=%2Fpatients');
-    fireEvent.click(screen.getByRole('button', { name: 'Change' }));
-    expect(await screen.findByRole('navigation', { name: 'Sign-in portals' })).toBeTruthy();
-  });
-
-  it('signs straight out when the account does not belong to the chosen portal', async () => {
-    const api = fakeApi({
+  it("opens only the cards of the account's own roles", async () => {
+    fakeApi({
       'GET /api/auth/me': signedOut,
       'POST /api/auth/login': () => json(200, session()),
-      'POST /api/auth/logout': () => new Response(null, { status: 204 }),
     });
-    const { router } = renderApp('/login');
-    await fillAndSubmit('zz_reception', 'synthetic-password', 'Doctor');
-    expect((await screen.findByRole('alert')).textContent).toMatch(
-      '“zz_reception” is not a Doctor account. Sign in through the Reception portal instead.',
-    );
-    expect(api.calls.some((c) => c.key === 'POST /api/auth/logout')).toBe(true);
-    expect(router.state.location.pathname).toBe('/login');
-    expect(hasCsrfToken()).toBe(false);
-    // The password was right, so the field is not marked invalid.
-    expect(screen.getByLabelText('Password').getAttribute('aria-invalid')).toBeNull();
-
-    // One click moves to the matching portal, keeping the username.
-    fireEvent.click(screen.getByRole('button', { name: 'Switch to Reception' }));
-    expect(await screen.findByRole('heading', { name: 'Reception sign in' })).toBeTruthy();
-    expect((screen.getByLabelText('Username') as HTMLInputElement).value).toBe('zz_reception');
-    expect(router.state.location.search).toContain('portal=reception');
-    expect(screen.queryByRole('alert')).toBeNull();
+    renderApp('/login');
+    await fillAndSubmit('zz_reception', 'synthetic-password');
+    const cards = await screen.findByRole('navigation', { name: 'Portals' });
+    const card = (name: string) =>
+      within(cards).getByRole('button', { name: new RegExp(`^${name}`) }) as HTMLButtonElement;
+    expect(card('Reception').disabled).toBe(false);
+    for (const other of ['Doctor', 'Pharmacy', 'Laboratory', 'Administration'])
+      expect(card(other).disabled).toBe(true);
   });
 
-  it('lets an account without a department use the Other staff portal', async () => {
+  it('lets an account without a department use the Other staff card', async () => {
     fakeApi({
       'GET /api/auth/me': signedOut,
       'POST /api/auth/login': () => json(200, session(makeUser({ roles: [], permissions: [] }))),
     });
     renderApp('/login');
-    fireEvent.click(await screen.findByRole('button', { name: 'Other staff sign in' }));
-    fireEvent.change(await screen.findByLabelText('Username'), { target: { value: 'zz_new' } });
-    fireEvent.change(screen.getByLabelText('Password'), {
-      target: { value: 'synthetic-password' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Sign in' }));
+    await signInThrough('Staff', 'zz_new');
     expect(await screen.findByText(/waiting for a role assignment/)).toBeTruthy();
   });
 
@@ -177,9 +204,9 @@ describe('login page (real API contract)', () => {
       'POST /api/auth/login': () => json(200, session()),
     });
     const { router } = renderApp('/login?next=//evil.example/steal');
-    await fillAndSubmit('zz_reception', 'synthetic-password');
-    await screen.findByRole('heading', { name: /Welcome/ });
-    expect(router.state.location.pathname).toBe('/');
+    await signInThrough('Reception');
+    await screen.findByRole('heading', { name: /Welcome, Test/ });
+    await waitFor(() => expect(router.state.location.pathname).toBe('/'));
   });
 });
 
@@ -241,10 +268,10 @@ describe('signed-in shell', () => {
     expect(hasCsrfToken()).toBe(false);
   });
 
-  it('sends an already signed-in user away from /login', async () => {
+  it('sends an already signed-in user from /login to the portal cards', async () => {
     fakeApi({ 'GET /api/auth/me': () => json(200, session()) });
     const { router } = renderApp('/login');
-    await screen.findByRole('heading', { name: /Welcome/ });
-    expect(router.state.location.pathname).toBe('/');
+    await screen.findByRole('navigation', { name: 'Portals' });
+    expect(router.state.location.pathname).toBe('/portals');
   });
 });

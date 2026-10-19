@@ -280,7 +280,15 @@ describe('permissions on patient endpoints', () => {
       })(),
   );
 
-  it.each([['HR'], ['INV'], ['MKT'], ['SA']])('%s cannot search patients', (role) =>
+  it(
+    'SA (the chief executive) can search patients',
+    tx(async () => {
+      const { get } = await setup(['SA']);
+      expect((await get('/api/patients?q=zz')).status).toBe(200);
+    }),
+  );
+
+  it.each([['HR'], ['INV'], ['MKT']])('%s cannot search patients', (role) =>
     tx(async () => {
       const { get } = await setup([role]);
       expect((await get('/api/patients?q=zz')).status).toBe(403);

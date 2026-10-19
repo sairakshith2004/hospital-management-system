@@ -10,7 +10,9 @@ import { HomePage } from './app/HomePage';
 import { NotFoundPage } from './app/NotFoundPage';
 import { AuthProvider } from './features/auth/AuthProvider';
 import { LoginPage } from './features/auth/LoginPage';
+import { PortalsPage } from './features/auth/PortalsPage';
 import { RequireAuth } from './features/auth/RequireAuth';
+import { SignupPage } from './features/auth/SignupPage';
 import { RequireAnyPermission, RequirePermission } from './features/auth/RequirePermission';
 import { AuditPage } from './features/admin/AuditPage';
 import { DoctorsAdminPage } from './features/admin/DoctorsAdminPage';
@@ -71,12 +73,15 @@ const STOCK_VIEW: PermissionCode[] = [
 const TRANSFERS: PermissionCode[] = STOCK_VIEW.filter((p) => p.startsWith('stock_transfer'));
 const LAB: PermissionCode[] = ['lab:process', 'lab_result:enter', 'lab_result:verify'];
 
-/** Every route except /login requires a session. */
+/** Every route except /login and /signup requires a session. */
 export const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
+  { path: '/signup', element: <SignupPage /> },
   {
     element: <RequireAuth />,
     children: [
+      // Right after signing in: choose a department portal card.
+      { path: 'portals', element: <PortalsPage /> },
       {
         element: <AppShell />,
         children: [

@@ -4,6 +4,8 @@
  *     up to care_window_before_days ahead, an open encounter, an encounter completed
  *     within care_window_after_days, a pending or booked follow-up targeting them, or a
  *     lab order of theirs verified within care_window_after_days;
+ *   - the Super Admin (the hospital's chief executive, docs/permissions.md note 13), for any
+ *     patient, audited with `access: executive`;
  *   - nobody else here. Nurse session assignments (§3.2) and emergency access (§4) are not
  *     part of the MVP, so other roles see clinical data only through the narrow views of
  *     their own modules (pharmacy prescriptions, lab orders).
@@ -67,7 +69,7 @@ async function deny(db: Database, req: Request, res: Response, patientId: string
 
 /**
  * Allows a clinical read of `patientId` (or refuses with 403), then records it.
- * Returns the caller's doctor profile id.
+ * Returns the caller's doctor profile id, or null for the Super Admin's executive access.
  */
 export async function authorizeClinicalRead(
   db: Database,
@@ -75,9 +77,24 @@ export async function authorizeClinicalRead(
   res: Response,
   patientId: string,
   what: string,
-): Promise<string> {
+): Promise<string | null> {
   const user = requireUser(res);
   if (!user.can('patient:read_clinical')) return deny(db, req, res, patientId);
+  if (user.roles.includes('SA')) {
+    await recordAudit(
+      db,
+      {
+        actor: { type: 'user', userId: user.id },
+        action: 'patient.clinical.read',
+        entityType: 'patient',
+        entityId: patientId,
+        patientId,
+        changes: { view: what, access: 'executive' },
+      },
+      auditContext(req, res),
+    );
+    return null;
+  }
   const doctorId = await doctorIdOfUser(db, user.id);
   if (!doctorId || !(await hasCareRelationship(db, doctorId, patientId, user.id))) {
     return deny(db, req, res, patientId);

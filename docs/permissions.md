@@ -39,54 +39,55 @@ In this table:
 | user_role:assign (grant or revoke a user's roles) | ◐¹ | | | | | | | | | | |
 | role:manage (role definitions and role-permission assignments) | ◐¹ | | | | | | | | | | |
 | system_settings:manage, security_settings:manage | ◐¹¹ | | | | | | | | | | |
-| operational_settings:manage | | ◐¹¹ | | | | | | | | | |
-| department:manage | | ● | | | | | | | | | |
+| operational_settings:manage | ● | ◐¹¹ | | | | | | | | | |
+| department:manage | ● | ● | | | | | | | | | |
 | audit:read | ◐¹⁰ | ● | | | | | | | | | |
-| break_glass:review | | ● | | | | | | | | | |
-| day_close:run (manual trigger of the end-of-day job) | | ● | | | | | | | | | |
-| patient:create, patient:update_demographics | | | ● | | | | | | | | |
-| patient:read_demographics | | ● | ● | ● | ● | ◐ | ◐ | ● | | | |
-| patient:read_clinical | | | | ◐ | ◐ | ◐² | ◐² | | | | |
+| break_glass:review | ● | ● | | | | | | | | | |
+| day_close:run (manual trigger of the end-of-day job) | ● | ● | | | | | | | | | |
+| patient:create, patient:update_demographics | ● | | ● | | | | | | | | |
+| patient:read_demographics | ● | ● | ● | ● | ● | ◐ | ◐ | ● | | | |
+| patient:read_clinical | ◐¹³ | | | ◐ | ◐ | ◐² | ◐² | | | | |
 | allergy:record (allergies and current medications) | | | | ◐ | ◐⁹ | | | | | | |
 | history:write (medical history entries) | | | | ◐ | | | | | | | |
-| schedule:read | | ● | ● | ● | ● | | | | | | ● |
-| schedule:manage, fee:manage, nurse_assignment:manage | | ● | | | | | | | | | |
-| appointment:book, appointment:cancel, appointment:reschedule, appointment:check_in, appointment:mark_no_show, followup:schedule | | | ● | | | | | | | | |
-| appointment:read_all (every doctor's appointments and queues) | | ●¹² | ●¹² | | | | | | | | |
-| queue:read | | ● | ● | ◐¹² | ◐¹² | | | | | | |
+| schedule:read | ● | ● | ● | ● | ● | | | | | | ● |
+| schedule:manage, fee:manage, nurse_assignment:manage | ● | ● | | | | | | | | | |
+| appointment:book, appointment:cancel, appointment:reschedule, appointment:check_in, appointment:mark_no_show, followup:schedule | ● | | ● | | | | | | | | |
+| appointment:read_all (every doctor's appointments and queues) | ● | ●¹² | ●¹² | | | | | | | | |
+| queue:read | ● | ● | ● | ◐¹² | ◐¹² | | | | | | |
 | encounter:write, prescription:create, prescription:cancel, lab_order:create, lab_order:cancel, followup:recommend | | | | ◐ | | | | | | | |
 | vitals:record | | | | ◐ | ◐ | | | | | | |
-| medicine:search (read-only) | | ● | | ● | ● | ● | | | | ● | |
+| medicine:search (read-only) | ● | ● | | ● | ● | ● | | | | ● | |
 | prescription:dispense, dispense:return, dispense:substitute, prescription:close | | | | | | ● | | | | | |
-| medicine:catalog_manage | | | | | | ● | | | | ● | |
-| stock:adjust_pharmacy | | | | | | ◐³ | | | | | |
-| stock:adjust_store | | | | | | | | | | ◐³ | |
-| goods_receipt:create (supplier receipts) | | | | | | | | | | ◐³ | |
-| stock_transfer:dispatch_pharmacy (create, dispatch, cancel from a pharmacy) | | | | | | ◐³ | | | | | |
-| stock_transfer:dispatch_store (create, dispatch, cancel from the general store) | | | | | | | | | | ◐³ | |
-| stock_transfer:receive_pharmacy (accept or reject into a pharmacy; accept returns into a pharmacy) | | | | | | ◐³ | | | | | |
-| stock_transfer:receive_store (accept or reject into a store; accept returns into a store) | | | | | | | | | | ◐³ | |
-| supplier:manage, po:create | | | | | | | | | | ● | |
-| po:approve | | ● | | | | | | | | | |
+| medicine:catalog_manage | ● | | | | | ● | | | | ● | |
+| stock:adjust_pharmacy | ● | | | | | ◐³ | | | | | |
+| stock:adjust_store | ● | | | | | | | | | ◐³ | |
+| goods_receipt:create (supplier receipts) | ● | | | | | | | | | ◐³ | |
+| stock_transfer:dispatch_pharmacy (create, dispatch, cancel from a pharmacy) | ● | | | | | ◐³ | | | | | |
+| stock_transfer:dispatch_store (create, dispatch, cancel from the general store) | ● | | | | | | | | | ◐³ | |
+| stock_transfer:receive_pharmacy (accept or reject into a pharmacy; accept returns into a pharmacy) | ● | | | | | ◐³ | | | | | |
+| stock_transfer:receive_store (accept or reject into a store; accept returns into a store) | ● | | | | | | | | | ◐³ | |
+| supplier:manage, po:create | ● | | | | | | | | | ● | |
+| po:approve | ● | ● | | | | | | | | | |
 | lab:process (including sample collection), lab_result:enter | | | | | | | ● | | | | |
 | lab_result:verify | | | | | | | ◐⁴ | | | | |
-| invoice:read | | ● | ● | | | ◐⁵ | | ● | | | |
-| invoice:issue, invoice:discard_draft, payment:record, refund:request | | | ● | | | ◐⁵ | | ● | | | |
-| discount:apply (up to the threshold) | | | ● | | | | | ● | | | |
-| discount:approve, refund:approve | | ● | | | | | | ◐⁶ | | | |
-| invoice:void, credit_note:create (manual)⁸, payment:reverse | | | | | | | | ● | | | |
-| price:manage | | ● | | | | | | ● | | | |
-| expense:create | | | | | | | | ● | | | |
-| expense:approve | | ● | | | | | | | | | |
-| report:finance | | ● | | | | | | ● | | | |
-| report:operational | | ● | | | | | | | | | |
-| employee:read | | ● | | | | | | | ● | | |
-| employee:manage, attendance:manage, leave:approve, payroll:manage | | | | | | | | | ● | | |
+| invoice:read | ● | ● | ● | | | ◐⁵ | | ● | | | |
+| invoice:issue, invoice:discard_draft, payment:record, refund:request | ● | | ● | | | ◐⁵ | | ● | | | |
+| discount:apply (up to the threshold) | ● | | ● | | | | | ● | | | |
+| discount:approve, refund:approve | ● | ● | | | | | | ◐⁶ | | | |
+| invoice:void, credit_note:create (manual)⁸, payment:reverse | ● | | | | | | | ● | | | |
+| price:manage | ● | ● | | | | | | ● | | | |
+| expense:create | ● | | | | | | | ● | | | |
+| expense:approve | ● | ● | | | | | | | | | |
+| report:finance | ● | ● | | | | | | ● | | | |
+| report:operational | ● | ● | | | | | | | | | |
+| operations:oversee (read-only view of the pharmacy prescription queue and the lab worklist) | ◐¹³ | | | | | | | | | | |
+| employee:read | ● | ● | | | | | | | ● | | |
+| employee:manage, attendance:manage, leave:approve, payroll:manage | ● | | | | | | | | ● | | |
 | leave:request (own) | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● |
-| equipment:manage, maintenance:log | | | | | | | | | | ● | |
-| enquiry:manage | | | ◐⁷ | | | | | | | | ● |
-| campaign:manage | | | | | | | | | | | ● |
-| report:marketing (aggregate only) | | ● | | | | | | | | | ● |
+| equipment:manage, maintenance:log | ● | | | | | | | | | ● | |
+| enquiry:manage | ● | | ◐⁷ | | | | | | | | ● |
+| campaign:manage | ● | | | | | | | | | | ● |
+| report:marketing (aggregate only) | ● | ● | | | | | | | | | ● |
 | break_glass:use | | | | ● | | | | | | | |
 
 Notes:
@@ -131,6 +132,7 @@ Notes:
     - `appointment:read_all` is the deliberate grant for seeing every doctor's appointments and queues. Only REC and ADM hold it. Its lists return scheduling fields and patient identifiers (MRN, name) only, never clinical data.
     - A request for another doctor's appointment or queue without `appointment:read_all` returns 404, the same as an unknown ID, so the record's existence isn't revealed. It writes an `access.denied` audit row.
     - `appointment:reschedule` is separate from `appointment:book` and `appointment:cancel`. A reschedule marks the original `rescheduled` and books the successor in one transaction; if the new slot is unavailable, nothing changes.
+13. **Super Admin as chief executive (2026-10-19, owner decision).** SA holds every permission except the clinical work that must carry a clinician's own name (`allergy:record`, `history:write`, consulting, prescribing, lab ordering, `vitals:record`, dispensing, `lab:process`, result entry and verification, `break_glass:use`), so one SA portal shows every department's dashboard and menu. `operations:oversee` (SA only) adds read-only views of the pharmacy prescription queue and the lab worklist; acting on them still needs PHA or LAB. SA can read any patient's clinical record without a care relationship; every such read is audited as `patient.clinical.read` with `access: executive`. SA still can't decide their own leave or approve their own expense, discount or refund (the same self-decision rules as everyone), and the account-management rules in note 1 are unchanged.
 
 ## 3. Patient-data access policy
 

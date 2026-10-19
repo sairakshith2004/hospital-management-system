@@ -2,8 +2,12 @@
  *   POST /api/auth/login   JSON { username, password } → 200 { user, csrfToken } | 401
  *   GET  /api/auth/me      → 200 { user, csrfToken } | 401
  *   POST /api/auth/logout  X-CSRF-Token required → 204 | 401 | 403
+ *   GET  /api/auth/signup/departments → 200 { departments: [{ id, name }] } (public)
+ *   POST /api/auth/signup  JSON { fullName, username, departmentId, designation, password }
+ *                          → 201 { status: "pending" } | 409 USERNAME_TAKEN | 422 | 429
+ *   A pending account that signs in with the right password gets 403 ACCOUNT_PENDING.
  */
-import type { AuthResponse } from '@hospitalos/shared';
+import { signupSchema, type AuthResponse } from '@hospitalos/shared';
 import { Router, type RequestHandler, type Response } from 'express';
 import type { Database } from '../../db/client.js';
 import { auditContext, recordAudit } from '../../lib/audit.js';
@@ -20,10 +24,12 @@ import {
 import { findSessionUser } from './auth.repo.js';
 import { LoginBody } from './auth.schemas.js';
 import { authenticate } from './auth.service.js';
+import { signUp, signupDepartments } from './signup.service.js';
 
 export interface AuthRoutesOptions {
   db: Database;
   loginLimiter: RequestHandler;
+  signupLimiter: RequestHandler;
   production: boolean;
 }
 
@@ -55,13 +61,24 @@ function toBody(
   };
 }
 
-export function authRoutes({ db, loginLimiter, production }: AuthRoutesOptions): Router {
+export function authRoutes({
+  db,
+  loginLimiter,
+  signupLimiter,
+  production,
+}: AuthRoutesOptions): Router {
   const router = Router();
 
   router.post('/login', loginLimiter, requireJson, async (req, res: Response) => {
     const body = LoginBody.parse(req.body);
     const context = auditContext(req, res);
     const result = await authenticate(db, body, context);
+    if (!result.ok && result.reason === 'pending')
+      throw new AppError(
+        403,
+        'ACCOUNT_PENDING',
+        'Your account is waiting for approval by a hospital administrator.',
+      );
     if (!result.ok) throw invalidCredentials();
 
     // A new session ID at login, so an ID planted beforehand is useless (fixation).
@@ -85,6 +102,16 @@ export function authRoutes({ db, loginLimiter, production }: AuthRoutesOptions):
       context,
     );
     res.json(toBody(user, csrfToken));
+  });
+
+  router.get('/signup/departments', async (_req, res) => {
+    res.json({ departments: await signupDepartments(db) });
+  });
+
+  router.post('/signup', signupLimiter, requireJson, async (req, res) => {
+    const input = signupSchema.parse(req.body);
+    await signUp(db, input, auditContext(req, res));
+    res.status(201).json({ status: 'pending' });
   });
 
   router.get('/me', requireAuth, (req, res) => {

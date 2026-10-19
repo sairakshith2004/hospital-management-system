@@ -123,16 +123,22 @@ export function labRoutes(db: Database): Router {
     },
   );
 
-  router.get('/lab/orders', requireAnyPermission(db, LAB_ROLES), async (req, res) => {
-    const { status } = z.object({ status: z.enum(LAB_ORDER_STATUSES).optional() }).parse(req.query);
-    const { rows } = await db.query<{ o: LabOrderView }>(
-      `SELECT ${ORDER_JSON} AS o ${ORDER_FROM}
+  router.get(
+    '/lab/orders',
+    requireAnyPermission(db, [...LAB_ROLES, 'operations:oversee']),
+    async (req, res) => {
+      const { status } = z
+        .object({ status: z.enum(LAB_ORDER_STATUSES).optional() })
+        .parse(req.query);
+      const { rows } = await db.query<{ o: LabOrderView }>(
+        `SELECT ${ORDER_JSON} AS o ${ORDER_FROM}
        WHERE ($1::text IS NULL AND o.status IN ('ordered', 'collected', 'resulted')) OR o.status = $1
        ORDER BY (o.priority = 'urgent') DESC, o.created_at LIMIT 200`,
-      [status ?? null],
-    );
-    res.json({ orders: rows.map((r) => r.o) });
-  });
+        [status ?? null],
+      );
+      res.json({ orders: rows.map((r) => r.o) });
+    },
+  );
 
   router.get(
     '/lab/orders/:id',

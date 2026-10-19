@@ -603,6 +603,26 @@ describe('workflows A, B and C: visit → consultation → pharmacy, lab and bil
         (await docA.get(`/api/patients/${f.patient}/chart`)).body.chart.otherDoctorRecords,
       ).toBe(0);
 
+      // The Super Admin (chief executive) reads any chart without a care relationship, audited
+      // as executive access, and sees the pharmacy and lab queues, but does no clinical work.
+      const ceo = await f.as(['SA']);
+      const ceoChart = await ceo.get(`/api/patients/${f.patient}/chart`);
+      expect(ceoChart.status).toBe(200);
+      expect(ceoChart.body.chart).toMatchObject({ scope: 'all', otherDoctorRecords: 0 });
+      expect(ceoChart.body.chart.encounters).toHaveLength(1);
+      expect(
+        (await audit('patient.clinical.read')).some(
+          (r) => (r.changes as { access?: string }).access === 'executive',
+        ),
+      ).toBe(true);
+      expect((await ceo.get(`/api/lab/orders/${orderId}`)).status).toBe(200);
+      expect((await ceo.get('/api/lab/orders')).status).toBe(200);
+      expect((await ceo.get('/api/pharmacy/prescriptions')).status).toBe(200);
+      expect(
+        (await ceo.post(`/api/encounters/${enc}/notes`, { kind: 'addendum', body: 'Zz' })).status,
+      ).toBe(403);
+      expect((await ceo.post(`/api/lab/orders/${orderId}/verify`)).status).toBe(403);
+
       // Billing: consultation + lab + dispensing lines; gapless number; payments.
       const draft = (await fin.get(`/api/invoices/${invoiceId}`)).body.invoice;
       expect(draft.lines.map((l: { sourceType: string }) => l.sourceType).sort()).toEqual([

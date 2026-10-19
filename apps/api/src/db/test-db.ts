@@ -90,7 +90,7 @@ export const TEST_PASSWORD = 'Synthetic-Passw0rd-for-tests';
 /** The API wired to the test transaction: real sessions table, no pruning timer. */
 export function createTestApp(
   client: pg.Client,
-  options: { loginLimiter?: RequestHandler } = {},
+  options: { loginLimiter?: RequestHandler; signupLimiter?: RequestHandler } = {},
 ): { app: Express; db: Database } {
   const db = transactionalDb(client);
   const session = createSession({
@@ -104,6 +104,7 @@ export function createTestApp(
     db,
     session: session.middleware,
     loginLimiter: options.loginLimiter ?? ((_req, _res, next) => next()),
+    signupLimiter: options.signupLimiter ?? ((_req, _res, next) => next()),
   });
   return { app, db };
 }

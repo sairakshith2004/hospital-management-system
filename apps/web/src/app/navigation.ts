@@ -76,7 +76,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Prescriptions',
     path: '/pharmacy',
     section: 'Pharmacy',
-    anyOf: ['prescription:dispense', 'prescription:close'],
+    anyOf: ['prescription:dispense', 'prescription:close', 'operations:oversee'],
   },
   {
     label: 'Stock',
@@ -122,7 +122,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Lab worklist',
     path: '/lab',
     section: 'Laboratory',
-    anyOf: ['lab:process', 'lab_result:enter', 'lab_result:verify'],
+    anyOf: ['lab:process', 'lab_result:enter', 'lab_result:verify', 'operations:oversee'],
   },
   {
     label: 'Lab tests',

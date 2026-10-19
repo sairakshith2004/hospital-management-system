@@ -3,6 +3,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  CLINICAL_WORK_PERMISSIONS,
   PERMISSIONS,
   ROLE_CODES,
   ROLE_NAMES,
@@ -54,14 +55,14 @@ describe('permissions', () => {
     }
   });
 
-  it('keeps the scheduling permissions least-privilege (Day 3)', () => {
+  it('keeps the scheduling permissions least-privilege (Day 3; SA oversees all, note 13)', () => {
     const holders = (code: PermissionCode) =>
       ROLE_CODES.filter((r) => ROLE_PERMISSIONS[r].includes(code));
-    expect(holders('appointment:reschedule')).toEqual(['REC']);
-    expect(holders('appointment:read_all')).toEqual(['ADM', 'REC']);
+    expect(holders('appointment:reschedule')).toEqual(['SA', 'REC']);
+    expect(holders('appointment:read_all')).toEqual(['SA', 'ADM', 'REC']);
     // Rescheduling is its own permission, separate from booking and cancelling.
-    expect(holders('appointment:book')).toEqual(['REC']);
-    expect(holders('appointment:cancel')).toEqual(['REC']);
+    expect(holders('appointment:book')).toEqual(['SA', 'REC']);
+    expect(holders('appointment:cancel')).toEqual(['SA', 'REC']);
     // Everyone else who reads the queue is limited to their own doctor's records.
     expect(
       holders('queue:read').filter((r) => !holders('appointment:read_all').includes(r)),
@@ -71,5 +72,17 @@ describe('permissions', () => {
   it('names all 11 roles and gives every role leave:request', () => {
     expect(Object.keys(ROLE_NAMES)).toEqual([...ROLE_CODES]);
     for (const role of ROLE_CODES) expect(ROLE_PERMISSIONS[role]).toContain('leave:request');
+  });
+
+  it('gives SA everything except clinical work, which needs a clinician (note 13)', () => {
+    for (const code of CLINICAL_WORK_PERMISSIONS) expect(ROLE_PERMISSIONS.SA).not.toContain(code);
+    expect(ROLE_PERMISSIONS.SA.length).toBe(codes.length - CLINICAL_WORK_PERMISSIONS.length);
+    for (const code of [
+      'patient:read_clinical',
+      'leave:approve',
+      'expense:approve',
+      'report:finance',
+    ] as const)
+      expect(ROLE_PERMISSIONS.SA).toContain(code);
   });
 });

@@ -29,7 +29,11 @@ const ALLERGIES = `(SELECT coalesce(json_agg(json_build_object('id', a.id, 'subs
 
 export function pharmacyRoutes(db: Database): Router {
   const router = Router();
-  const canView = requireAnyPermission(db, ['prescription:dispense', 'prescription:close']);
+  const canView = requireAnyPermission(db, [
+    'prescription:dispense',
+    'prescription:close',
+    'operations:oversee', // the Super Admin's read-only view
+  ]);
 
   router.get('/pharmacy/prescriptions', canView, async (req, res) => {
     const { status } = z

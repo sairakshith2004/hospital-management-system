@@ -15,5 +15,6 @@
   "0013_lab_billing.sql": "a91b24e3a61a3d95d2d3f434f4302bb8b04339e74342eb76ca8f7723fcf0b9ee",
   "0014_lab_billing_rules.sql": "e4b6f8136b73ebcb6b86b77fc36a14cf7b88da9ca64ebcd5bdce3c598b95022e",
   "0015_operations.sql": "cf707716d5abca434aaf47d52d20c73dba83537c883c463834e2a342889830e8",
-  "0016_operations_rules.sql": "16caddebe1d699a2e6f50ca2f864bd790e9b57b8a90702ea5a1c06aac33654ee"
+  "0016_operations_rules.sql": "16caddebe1d699a2e6f50ca2f864bd790e9b57b8a90702ea5a1c06aac33654ee",
+  "0017_signup_pending_approval.sql": "48aa02001c29664ace7a3c24b4e4b39d037dba495b17759c4001c7cf30f0ea0b"
 }

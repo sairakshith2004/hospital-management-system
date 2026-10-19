@@ -46,8 +46,13 @@ async function rolesOf(tx: Queryable, userId: string): Promise<string[]> {
 }
 
 async function lockUser(tx: Queryable, id: string) {
-  const { rows } = await tx.query<{ id: string; status: string; username: string }>(
-    'SELECT id, status, username FROM users WHERE id = $1 FOR UPDATE',
+  const { rows } = await tx.query<{
+    id: string;
+    status: string;
+    username: string;
+    pendingApproval: boolean;
+  }>(
+    'SELECT id, status, username, pending_approval AS "pendingApproval" FROM users WHERE id = $1 FOR UPDATE',
     [id],
   );
   if (!rows[0]) throw new AppError(404, 'NOT_FOUND', 'User not found');
@@ -185,7 +190,9 @@ export async function setUserStatus(
   return withTransaction(db, async (tx) => {
     const u = await lockUser(tx, userId);
     await guardTarget(tx, actor, userId);
-    if (u.status === status) return;
+    // A sign-up waiting for approval: approving activates it, rejecting keeps it disabled.
+    const from = u.pendingApproval ? 'pending' : u.status;
+    if (from === status) return;
     if (
       status === 'disabled' &&
       (await rolesOf(tx, userId)).includes('SA') &&
@@ -193,18 +200,17 @@ export async function setUserStatus(
     ) {
       throw new AppError(409, 'LAST_ADMIN', 'The last active Super Admin cannot be disabled.');
     }
-    await tx.query('UPDATE users SET status = $2, updated_by = $3 WHERE id = $1', [
-      userId,
-      status,
-      actor.userId,
-    ]);
+    await tx.query(
+      'UPDATE users SET status = $2, pending_approval = false, updated_by = $3 WHERE id = $1',
+      [userId, status, actor.userId],
+    );
     if (status === 'disabled') await endSessions(tx, userId);
     await audit(tx, actor, context, {
       action: 'user.status_changed',
       entityType: 'user',
       entityId: userId,
       reason,
-      changes: { from: u.status, to: status },
+      changes: { from, to: status },
     });
   });
 }

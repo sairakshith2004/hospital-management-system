@@ -75,7 +75,8 @@ export function adminRoutes(db: Database): Router {
               e.employment_status AS "employmentStatus",
               json_build_object('id', d.id, 'name', d.name) AS department,
               CASE WHEN u.id IS NULL THEN NULL ELSE json_build_object(
-                'id', u.id, 'username', u.username, 'status', u.status,
+                'id', u.id, 'username', u.username,
+                'status', CASE WHEN u.pending_approval THEN 'pending' ELSE u.status END,
                 'locked', coalesce(u.locked_until > now(), false),
                 'roles', (SELECT coalesce(json_agg(r.code ORDER BY r.code), '[]') FROM user_roles ur JOIN roles r ON r.id = ur.role_id WHERE ur.user_id = u.id))
               END AS user,

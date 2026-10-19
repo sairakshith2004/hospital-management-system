@@ -120,6 +120,13 @@
       "when": 1792308598965,
       "tag": "0016_operations_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1792386705785,
+      "tag": "0017_signup_pending_approval",
+      "breakpoints": true
     }
   ]
 }

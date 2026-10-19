@@ -9,6 +9,8 @@ export interface LoginCandidate {
   id: string;
   passwordHash: string;
   status: string;
+  /** Signed up and waiting for an administrator (status is 'disabled' meanwhile). */
+  pendingApproval: boolean;
   locked: boolean;
 }
 
@@ -18,7 +20,7 @@ export async function findLoginCandidate(
   username: string,
 ): Promise<LoginCandidate | undefined> {
   const { rows } = await db.query<LoginCandidate>(
-    `SELECT id, password_hash AS "passwordHash", status,
+    `SELECT id, password_hash AS "passwordHash", status, pending_approval AS "pendingApproval",
             coalesce(locked_until > now(), false) AS locked
      FROM users WHERE username = $1`,
     [username],

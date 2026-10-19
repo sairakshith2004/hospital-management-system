@@ -70,7 +70,31 @@ describe('one app, a sidebar per role', () => {
     ],
     ['HR', ['Staff', 'Attendance', 'Leave'], ['Patients', 'Invoices']],
     ['MKT', ['Enquiries', 'Campaigns', 'Leave'], ['Patients', 'Queue', 'Prescriptions']],
-    ['SA', ['Staff', 'Settings', 'Audit log'], ['Patients', 'Invoices']],
+    [
+      // The Super Admin is the CEO: every department in one portal, but not a doctor's own pages.
+      'SA',
+      [
+        'Patients',
+        'Appointments',
+        'Queue',
+        'Prescriptions',
+        'Stock',
+        'Lab worklist',
+        'Lab tests',
+        'Invoices',
+        'Staff',
+        'Attendance',
+        'Leave',
+        'Expenses',
+        'Finance summary',
+        'Equipment',
+        'Enquiries',
+        'Campaigns',
+        'Settings',
+        'Audit log',
+      ],
+      ['My appointments', 'My earnings'],
+    ],
   ])('%s sees its own modules only', async (role, shown, hidden) => {
     fakeApi({ 'GET /api/auth/me': () => as(role) });
     renderApp('/forbidden');

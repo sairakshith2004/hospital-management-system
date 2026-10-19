@@ -239,8 +239,16 @@ export function StaffPage() {
                     {s.user ? (
                       <>
                         <span className="font-mono text-sm">{s.user.username}</span>{' '}
-                        <Badge tone={s.user.status === 'active' ? 'success' : 'danger'}>
-                          {s.user.status}
+                        <Badge
+                          tone={
+                            s.user.status === 'active'
+                              ? 'success'
+                              : s.user.status === 'pending'
+                                ? 'warning'
+                                : 'danger'
+                          }
+                        >
+                          {s.user.status === 'pending' ? 'waiting for approval' : s.user.status}
                         </Badge>
                         {s.user.locked && <Badge tone="warning">locked</Badge>}
                       </>
@@ -285,7 +293,24 @@ export function StaffPage() {
                   <Td>
                     {!self && (
                       <div className="flex flex-wrap gap-1">
-                        {can('user:manage') && s.user && (
+                        {can('user:manage') && s.user?.status === 'pending' && (
+                          <>
+                            <Button
+                              size="sm"
+                              onClick={() => setAct({ kind: 'status', s, to: 'active' })}
+                            >
+                              Approve
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              onClick={() => setAct({ kind: 'status', s, to: 'disabled' })}
+                            >
+                              Reject
+                            </Button>
+                          </>
+                        )}
+                        {can('user:manage') && s.user && s.user.status !== 'pending' && (
                           <>
                             <Button
                               size="sm"
@@ -343,7 +368,15 @@ export function StaffPage() {
           !act
             ? ''
             : act.kind === 'status'
-              ? `${act.to === 'disabled' ? 'Disable' : 'Enable'} ${act.s.fullName}`
+              ? `${
+                  act.s.user?.status === 'pending'
+                    ? act.to === 'active'
+                      ? 'Approve'
+                      : 'Reject'
+                    : act.to === 'disabled'
+                      ? 'Disable'
+                      : 'Enable'
+                } ${act.s.fullName}`
               : act.kind === 'password'
                 ? `Reset password for ${act.s.fullName}`
                 : act.kind === 'role'
@@ -353,13 +386,17 @@ export function StaffPage() {
                     : `${act.s.fullName} has left`
         }
         description={
-          act?.kind === 'status' && act.to === 'disabled'
-            ? 'They are signed out at once.'
-            : act?.kind === 'password'
-              ? 'They are signed out at once and must use the new password.'
-              : act?.kind === 'employment'
-                ? 'Their login is disabled and they are signed out.'
-                : undefined
+          act?.kind === 'status' && act.s.user?.status === 'pending'
+            ? act.to === 'active'
+              ? `They can sign in, but have no access until the Super Admin gives them a role. Signed up for ${act.s.department.name} as ${act.s.designation}.`
+              : 'The account stays disabled and cannot sign in.'
+            : act?.kind === 'status' && act.to === 'disabled'
+              ? 'They are signed out at once.'
+              : act?.kind === 'password'
+                ? 'They are signed out at once and must use the new password.'
+                : act?.kind === 'employment'
+                  ? 'Their login is disabled and they are signed out.'
+                  : undefined
         }
         confirmLabel="Confirm"
         reasonLabel="Reason (kept in the audit log)"

@@ -475,6 +475,12 @@ function AccessWork() {
     <WidgetSection title="Accounts">
       <Grid>
         <Stat
+          label="Sign-ups to approve"
+          value={q.data?.staff.filter((s) => s.user?.status === 'pending').length ?? '…'}
+          tone="warning"
+          to="/admin/staff"
+        />
+        <Stat
           label="Awaiting a role"
           value={
             q.data?.staff.filter(
@@ -505,9 +511,17 @@ export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   { key: 'follow-ups', anyOf: ['followup:schedule'], Component: FollowUpWork },
   { key: 'billing', anyOf: ['invoice:issue'], Component: BillingWork },
   { key: 'doctor-earnings', anyOf: ['report:finance'], Component: DoctorEarningsMonth },
-  { key: 'pharmacy', anyOf: ['prescription:dispense'], Component: PharmacyWork },
+  {
+    key: 'pharmacy',
+    anyOf: ['prescription:dispense', 'operations:oversee'],
+    Component: PharmacyWork,
+  },
   { key: 'store', anyOf: ['goods_receipt:create'], Component: StoreWork },
-  { key: 'lab', anyOf: ['lab:process', 'lab_result:verify'], Component: LabWork },
+  {
+    key: 'lab',
+    anyOf: ['lab:process', 'lab_result:verify', 'operations:oversee'],
+    Component: LabWork,
+  },
   { key: 'people', anyOf: ['leave:approve'], Component: PeopleWork },
   { key: 'approvals', anyOf: ['expense:approve'], Component: ApprovalsWork },
   { key: 'facilities', anyOf: ['equipment:manage'], Component: FacilitiesWork },

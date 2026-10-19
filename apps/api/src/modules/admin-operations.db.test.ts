@@ -409,8 +409,10 @@ describe('HR, finance, equipment and marketing', () => {
       // Pending leave does not block the doctor.
       expect(await available('2030-01-07')).toEqual([true, true]);
 
-      // Nobody but HR can see everyone's leave or decide it, not even administrators.
-      for (const other of [adm, sa, doc]) {
+      // Only HR and the Super Admin (the chief executive) see everyone's leave and decide it;
+      // not hospital administrators or doctors.
+      expect((await sa.get('/api/hr/leave/summary?year=2030')).status).toBe(200);
+      for (const other of [adm, doc]) {
         expect((await other.get('/api/hr/leave?scope=all')).status).toBe(403);
         expect((await other.get('/api/hr/leave/summary?year=2030')).status).toBe(403);
         expect(

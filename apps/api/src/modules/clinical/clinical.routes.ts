@@ -238,6 +238,7 @@ export function clinicalRoutes(db: Database): Router {
       patientId,
       scope === 'all' ? 'chart:all_doctors' : 'chart',
     );
+    // The Super Admin (doctorId null) always sees every doctor's records.
     res.json({ chart: await findPatientChart(db, patientId, scope === 'all' ? null : doctorId) });
   });
 

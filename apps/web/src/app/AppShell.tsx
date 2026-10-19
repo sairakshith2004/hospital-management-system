@@ -1,6 +1,6 @@
 import { ROLE_NAMES, type RoleCode } from '@hospitalos/shared';
 import { useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router';
+import { Link, NavLink, Outlet, useLocation } from 'react-router';
 import { ApiStatus } from '../ApiStatus';
 import { Alert } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
@@ -83,6 +83,9 @@ export function AppShell() {
             >
               {initials(user?.fullName)}
             </span>
+            <Button asChild variant="ghost" size="sm">
+              <Link to="/portals">Portals</Link>
+            </Button>
             <Button
               variant="secondary"
               size="sm"
@@ -138,10 +141,10 @@ export function AppShell() {
             <Outlet />
           </main>
           <footer className="border-t border-sky-100 bg-white/80 py-3 dark:border-slate-800 dark:bg-slate-900">
-            <p className="mb-1 text-center text-xs text-slate-500 dark:text-slate-400">
+            <p className="text-center text-xs text-slate-500 dark:text-slate-400">
               Synthetic data only. Not for real patient information.
             </p>
-            <ApiStatus compact />
+            <ApiStatus />
           </footer>
         </div>
       </div>
