@@ -10,34 +10,7 @@ import pg from 'pg';
 import { PASSWORD_MAX_LENGTH, PASSWORD_MIN_LENGTH, hashPassword } from '../../lib/password.js';
 import { DbConfigError, appUrl, describeTarget, runScript } from '../db-env.js';
 import { BootstrapError, USERNAME_PATTERN, bootstrapAdmin } from './bootstrap-admin.js';
-
-/** Reads one line from the terminal without echoing it. */
-function promptHidden(question: string): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const { stdin, stdout } = process;
-    let value = '';
-    const finish = (err?: Error) => {
-      stdin.setRawMode(false);
-      stdin.pause();
-      stdin.off('data', onData);
-      stdout.write('\n');
-      if (err) reject(err);
-      else resolve(value);
-    };
-    const onData = (chunk: Buffer) => {
-      for (const ch of chunk.toString('utf8')) {
-        if (ch === '\r' || ch === '\n') return finish();
-        if (ch === '\u0003') return finish(new BootstrapError('Cancelled.')); // Ctrl-C
-        if (ch === '\u007f' || ch === '\b') value = value.slice(0, -1);
-        else value += ch;
-      }
-    };
-    stdout.write(question);
-    stdin.setRawMode(true);
-    stdin.resume();
-    stdin.on('data', onData);
-  });
-}
+import { PromptCancelled, promptHidden } from './prompt.js';
 
 function parseUsername(argv: string[]): string {
   const i = argv.indexOf('--username');
@@ -98,7 +71,9 @@ runScript(async () => {
     await main();
   } catch (err) {
     // Expected refusals print their own message, without the "Failed:" prefix.
-    if (err instanceof BootstrapError) throw new DbConfigError(err.message);
+    if (err instanceof BootstrapError || err instanceof PromptCancelled) {
+      throw new DbConfigError(err.message);
+    }
     throw err;
   }
 });

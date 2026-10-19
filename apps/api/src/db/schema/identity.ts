@@ -68,11 +68,15 @@ export const users = pgTable(
     status: text('status').notNull().default('active'),
     failedLogins: integer('failed_logins').notNull().default(0),
     lockedUntil: timestamp('locked_until', { withTimezone: true }),
+    /** Signed up on the sign-in page and not yet approved (status stays 'disabled'). */
+    pendingApproval: boolean('pending_approval').notNull().default(false),
     ...auditColumns(userId),
   },
   (t) => [
     check('users_status_check', oneOf(t.status, USER_STATUSES)),
     check('users_failed_logins_non_negative', sql`${t.failedLogins} >= 0`),
+    // A sign-up waiting for approval can never sign in.
+    check('users_pending_is_disabled', sql`NOT ${t.pendingApproval} OR ${t.status} = 'disabled'`),
   ],
 );
 

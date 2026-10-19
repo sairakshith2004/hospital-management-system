@@ -10,6 +10,7 @@ interface ErrorBody {
     message: string;
     requestId: string;
     details?: { path: string; message: string }[];
+    data?: Record<string, unknown>;
   };
 }
 
@@ -19,9 +20,16 @@ function send(
   code: string,
   message: string,
   details?: ErrorBody['error']['details'],
+  data?: ErrorBody['error']['data'],
 ): void {
   const body: ErrorBody = {
-    error: { code, message, requestId: getRequestId(res), ...(details ? { details } : {}) },
+    error: {
+      code,
+      message,
+      requestId: getRequestId(res),
+      ...(details ? { details } : {}),
+      ...(data ? { data } : {}),
+    },
   };
   res.status(status).json(body);
 }
@@ -43,7 +51,7 @@ export function errorHandler(logger: Logger): ErrorRequestHandler {
       return;
     }
     if (err instanceof AppError) {
-      send(res, err.status, err.code, err.message);
+      send(res, err.status, err.code, err.message, undefined, err.data);
       return;
     }
     if (err instanceof ZodError) {

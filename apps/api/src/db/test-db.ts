@@ -90,7 +90,7 @@ export const TEST_PASSWORD = 'Synthetic-Passw0rd-for-tests';
 /** The API wired to the test transaction: real sessions table, no pruning timer. */
 export function createTestApp(
   client: pg.Client,
-  options: { loginLimiter?: RequestHandler } = {},
+  options: { loginLimiter?: RequestHandler; signupLimiter?: RequestHandler } = {},
 ): { app: Express; db: Database } {
   const db = transactionalDb(client);
   const session = createSession({
@@ -104,6 +104,7 @@ export function createTestApp(
     db,
     session: session.middleware,
     loginLimiter: options.loginLimiter ?? ((_req, _res, next) => next()),
+    signupLimiter: options.signupLimiter ?? ((_req, _res, next) => next()),
   });
   return { app, db };
 }
@@ -141,4 +142,20 @@ export async function createTestUser(
     );
   }
   return { id: user[0]!.id, username: name };
+}
+
+/** Signs a test user in through the real login route; returns the cookie and CSRF token. */
+export async function signIn(
+  app: Express,
+  username: string,
+): Promise<{ cookie: string; csrf: string }> {
+  const { default: request } = await import('supertest');
+  const res = await request(app)
+    .post('/api/auth/login')
+    .send({ username, password: TEST_PASSWORD });
+  if (res.status !== 200) throw new Error(`test sign-in failed: ${res.status}`);
+  const cookies = ([] as string[]).concat(res.headers['set-cookie'] ?? []);
+  const cookie = cookies.find((c) => c.startsWith('hms.sid='))?.split(';')[0];
+  if (!cookie) throw new Error('test sign-in set no session cookie');
+  return { cookie, csrf: (res.body as { csrfToken: string }).csrfToken };
 }

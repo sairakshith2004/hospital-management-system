@@ -55,6 +55,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setEndReason(null);
       queryClient.removeQueries(notSession);
       queryClient.setQueryData<AuthResponse | null>(SESSION_QUERY_KEY, result);
+      return result.user;
     },
     [queryClient],
   );

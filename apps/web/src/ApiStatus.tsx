@@ -1,60 +1,69 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { cn } from './lib/utils';
 import { checkApiHealth } from './lib/api';
 
 type Status = 'checking' | 'online' | 'offline';
 
 const LABELS: Record<Status, string> = {
-  checking: 'Checking API…',
-  online: 'API online',
-  offline: 'API unreachable',
+  checking: 'Checking connection to the server',
+  online: 'Connected to the server',
+  offline: 'Not connected to the server',
 };
 
 const DOT: Record<Status, string> = {
   checking: 'bg-slate-400',
-  online: 'bg-emerald-600',
+  online: 'bg-emerald-500',
   offline: 'bg-red-600',
 };
 
-/** Live API health indicator. `compact` renders a single line for page footers. */
-export function ApiStatus({ compact = false }: { compact?: boolean }) {
+/** How often the dot rechecks the server, in milliseconds. */
+export const RECHECK_MS = 30_000;
+
+/**
+ * A small dot fixed to the top edge of the screen: green when the API answers, red when it
+ * doesn't. It rechecks every 30 seconds and when the tab or network comes back. The status
+ * is also given in words for screen readers and as a tooltip.
+ */
+export function ApiStatus() {
   const [status, setStatus] = useState<Status>('checking');
 
   useEffect(() => {
     let active = true;
-    void checkApiHealth().then((result) => {
-      if (active) setStatus(result);
-    });
+    const check = () =>
+      void checkApiHealth().then((result) => {
+        if (active) setStatus(result);
+      });
+    check();
+    const timer = setInterval(check, RECHECK_MS);
+    const onVisible = () => document.visibilityState === 'visible' && check();
+    window.addEventListener('online', check);
+    window.addEventListener('offline', check);
+    document.addEventListener('visibilitychange', onVisible);
     return () => {
       active = false;
+      clearInterval(timer);
+      window.removeEventListener('online', check);
+      window.removeEventListener('offline', check);
+      document.removeEventListener('visibilitychange', onVisible);
     };
   }, []);
 
-  const recheck = useCallback(async () => {
-    setStatus('checking');
-    setStatus(await checkApiHealth());
-  }, []);
-
   return (
-    <section
-      aria-label="System status"
-      className={cn(
-        'flex items-center gap-3 text-sm text-slate-600 dark:text-slate-300',
-        compact ? 'justify-center' : 'rounded-lg border border-slate-200 p-4 dark:border-slate-700',
-      )}
+    <div
+      role="status"
+      aria-live="polite"
+      title={LABELS[status]}
+      className="pointer-events-auto fixed top-1.5 right-1.5 z-50 flex size-4 items-center justify-center"
     >
-      <p role="status" aria-live="polite" className="flex items-center gap-2">
-        <span aria-hidden="true" className={cn('size-2 rounded-full', DOT[status])} />
-        {LABELS[status]}
-      </p>
-      <button
-        type="button"
-        onClick={() => void recheck()}
-        disabled={status === 'checking'}
-        className="rounded text-teal-700 underline-offset-2 hover:underline focus-visible:outline-2 focus-visible:outline-teal-600 disabled:opacity-50 dark:text-teal-400"
-      >
-        Check again
-      </button>
-    </section>
+      <span
+        aria-hidden="true"
+        className={cn(
+          'size-2.5 rounded-full ring-2 ring-white dark:ring-slate-900',
+          DOT[status],
+          status === 'offline' && 'animate-pulse',
+        )}
+      />
+      <span className="sr-only">{LABELS[status]}</span>
+    </div>
   );
 }

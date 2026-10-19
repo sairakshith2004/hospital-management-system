@@ -17,3 +17,13 @@ export type RoleCode = (typeof ROLE_CODES)[number];
 
 export * from './permissions.js';
 export * from './auth.js';
+export * from './schemas/patients.js';
+export * from './schemas/doctors.js';
+export * from './schemas/appointments.js';
+export * from './schemas/inventory.js';
+export * from './schemas/reports.js';
+export * from './schemas/clinical.js';
+export * from './schemas/lab.js';
+export * from './schemas/billing.js';
+export * from './schemas/operations.js';
+export * from './schemas/admin.js';

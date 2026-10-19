@@ -111,6 +111,44 @@ export function adminUrl(env: Env = process.env): URL {
   return url;
 }
 
+export type DbRole = 'owner' | 'app';
+const ROLES: Record<DbRole, string> = { owner: OWNER_ROLE, app: APP_ROLE };
+
+/** The one query assertConnectedTarget needs; pg.Client satisfies it. */
+interface TargetProbe {
+  query(text: string): Promise<{ rows: unknown[] }>;
+}
+
+/**
+ * Asks the connected server which database and role this session really uses, and
+ * refuses unless they are exactly the expected ones for `mode` and `role`. The URL
+ * guards above only check what the caller configured; this checks what the server
+ * reports, against fixed names, not anything taken from the URL. Call it after
+ * connecting and before any write. Fails closed: a query error, no row, or any other
+ * value refuses. The message never echoes what the server returned.
+ */
+export async function assertConnectedTarget(
+  client: TargetProbe,
+  mode: DbMode,
+  role: DbRole,
+): Promise<void> {
+  const expected = { database: DATABASES[mode], user: ROLES[role] };
+  const refuse = () =>
+    new DbConfigError(
+      `Refused: could not confirm the connection is ${expected.user} on ${expected.database}. Nothing was changed.`,
+    );
+  let row: unknown;
+  try {
+    ({
+      rows: [row],
+    } = await client.query('SELECT current_database() AS database, current_user AS "user"'));
+  } catch {
+    throw refuse();
+  }
+  const { database, user } = (row ?? {}) as { database?: unknown; user?: unknown };
+  if (database !== expected.database || user !== expected.user) throw refuse();
+}
+
 /** A printable description of a connection target. Never includes the password. */
 export function describeTarget(url: URL): string {
   return `${decodeURIComponent(url.username)}@${url.host}/${databaseOf(url)}`;

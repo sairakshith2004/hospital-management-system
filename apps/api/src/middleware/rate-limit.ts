@@ -5,6 +5,8 @@ import { AppError } from '../lib/errors.js';
 export interface LoginLimiterOptions {
   limit?: number;
   windowMs?: number;
+  /** Count successful requests too (sign-up: every new account counts). */
+  countSuccesses?: boolean;
 }
 
 /**
@@ -16,11 +18,12 @@ export interface LoginLimiterOptions {
 export function createLoginLimiter({
   limit = 10,
   windowMs = 15 * 60 * 1000,
+  countSuccesses = false,
 }: LoginLimiterOptions = {}): RequestHandler {
   return rateLimit({
     windowMs,
     limit,
-    skipSuccessfulRequests: true,
+    skipSuccessfulRequests: !countSuccesses,
     standardHeaders: 'draft-8',
     legacyHeaders: false,
     handler: (_req, _res, next) => {

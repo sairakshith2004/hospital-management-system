@@ -61,6 +61,40 @@ describe('seedReferenceData (every test rolled back)', () => {
       });
     }));
 
+  it('adds newly introduced permissions and their grants to an already-seeded database', () =>
+    inRollback(owner, async () => {
+      await seedReferenceData(owner);
+      // The database as it was before Day 3 Phase 3B: without the two scheduling permissions.
+      const NEW = ['appointment:reschedule', 'appointment:read_all'];
+      await owner.query(
+        `DELETE FROM role_permissions WHERE permission_id IN
+           (SELECT id FROM permissions WHERE code = ANY($1::text[]))`,
+        [NEW],
+      );
+      await owner.query('DELETE FROM permissions WHERE code = ANY($1::text[])', [NEW]);
+      const result = await seedReferenceData(owner);
+      expect(result).toEqual({
+        settings: 'unchanged',
+        permissions: { inserted: 2, updated: 0, unchanged: PERMISSIONS.length - 2 },
+        roles: { inserted: 0, updated: 0, unchanged: 11 },
+        rolePermissions: { inserted: 5, unchanged: PAIR_COUNT - 5 },
+        audited: true,
+      });
+      const { rows } = await owner.query<{ pair: string }>(
+        `SELECT r.code || ' ' || p.code AS pair FROM role_permissions rp
+         JOIN roles r ON r.id = rp.role_id JOIN permissions p ON p.id = rp.permission_id
+         WHERE p.code = ANY($1::text[]) ORDER BY 1`,
+        [NEW],
+      );
+      expect(rows.map((r) => r.pair)).toEqual([
+        'ADM appointment:read_all',
+        'REC appointment:read_all',
+        'REC appointment:reschedule',
+        'SA appointment:read_all', // the Super Admin oversees everything (permissions.md note 13)
+        'SA appointment:reschedule',
+      ]);
+    }));
+
   it('writes one system audit row, with counts only, when it changes something', () =>
     inRollback(owner, async () => {
       await seedReferenceData(owner);

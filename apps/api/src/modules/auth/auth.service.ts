@@ -9,7 +9,7 @@ import { dummyHash, verifyPassword } from '../../lib/password.js';
 import { clearFailedLogins, findLoginCandidate, recordFailedLogin } from './auth.repo.js';
 import type { LoginBody } from './auth.schemas.js';
 
-export type FailureReason = 'unknown_user' | 'inactive' | 'locked' | 'bad_password';
+export type FailureReason = 'unknown_user' | 'inactive' | 'locked' | 'bad_password' | 'pending';
 
 export type AuthenticateResult =
   { ok: true; userId: string } | { ok: false; reason: FailureReason };
@@ -23,7 +23,7 @@ export async function authenticate(
 
   let reason: FailureReason | undefined;
   if (!candidate) reason = 'unknown_user';
-  else if (candidate.status !== 'active') reason = 'inactive';
+  else if (candidate.status !== 'active' && !candidate.pendingApproval) reason = 'inactive';
   else if (candidate.locked) reason = 'locked';
 
   if (reason || !candidate) {
@@ -55,6 +55,22 @@ export async function authenticate(
       if (locked) await recordAudit(tx, { ...base, action: 'auth.locked' }, context);
     });
     return { ok: false, reason: 'bad_password' };
+  }
+
+  if (candidate.pendingApproval) {
+    // The password is right, so it is safe to say why they can't sign in yet.
+    await recordAudit(
+      db,
+      {
+        actor: SYSTEM,
+        action: 'auth.login_failed',
+        entityType: 'user',
+        entityId: candidate.id,
+        reason: 'pending',
+      },
+      context,
+    );
+    return { ok: false, reason: 'pending' };
   }
 
   await clearFailedLogins(db, candidate.id);

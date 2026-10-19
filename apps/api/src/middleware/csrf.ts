@@ -15,7 +15,9 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  * Login has no session yet, so it can't carry a token. It is protected instead by
  * requiring a JSON body (a cross-site HTML form can't send one) and SameSite=Lax.
  */
-const EXEMPT_PATHS = new Set(['/api/auth/login']);
+// Sign-in and sign-up have no session yet; both require a JSON body, which a cross-site
+// HTML form can't send.
+const EXEMPT_PATHS = new Set(['/api/auth/login', '/api/auth/signup']);
 
 export function newCsrfToken(): string {
   return randomBytes(32).toString('base64url');

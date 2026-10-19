@@ -361,7 +361,15 @@ describe('requirePermission', () => {
     const app = express();
     app.use(requestId, express.json(), session.middleware, loadUser(db), csrfProtection);
     const api = express.Router();
-    api.use('/auth', authRoutes({ db, loginLimiter: (_q, _s, n) => n(), production: false }));
+    api.use(
+      '/auth',
+      authRoutes({
+        db,
+        loginLimiter: (_q, _s, n) => n(),
+        signupLimiter: (_q, _s, n) => n(),
+        production: false,
+      }),
+    );
     api.get('/guarded', requirePermission(db, 'audit:read'), (_req, res) => {
       res.json({ ok: true });
     });

@@ -42,9 +42,14 @@ export const PERMISSIONS = [
   { code: 'nurse_assignment:manage', description: 'Assign nurses to doctor sessions' },
   { code: 'appointment:book', description: 'Book appointments' },
   { code: 'appointment:cancel', description: 'Cancel appointments' },
+  { code: 'appointment:reschedule', description: 'Move a booked appointment to another slot' },
   { code: 'appointment:check_in', description: 'Check patients in' },
   { code: 'appointment:mark_no_show', description: 'Mark appointments as no-shows' },
   { code: 'followup:schedule', description: 'Book follow-up appointments' },
+  {
+    code: 'appointment:read_all',
+    description: "View every doctor's appointments and queues (otherwise only your own)",
+  },
   { code: 'queue:read', description: 'View the patient queue' },
   { code: 'encounter:write', description: 'Write consultation encounters' },
   { code: 'prescription:create', description: 'Create prescriptions' },
@@ -103,6 +108,11 @@ export const PERMISSIONS = [
   { code: 'expense:approve', description: 'Approve expenses' },
   { code: 'report:finance', description: 'View finance reports' },
   { code: 'report:operational', description: 'View operational reports' },
+  {
+    code: 'operations:oversee',
+    description:
+      'View every department work queue read-only (pharmacy prescriptions, lab worklist)',
+  },
   { code: 'employee:read', description: 'View employee records' },
   { code: 'employee:manage', description: 'Manage employee records' },
   { code: 'attendance:manage', description: 'Manage attendance' },
@@ -134,16 +144,42 @@ export const ROLE_NAMES: Record<RoleCode, string> = {
 };
 
 /** Which permissions each role grants (● and ◐ cells of the matrix), in matrix order. */
+/**
+ * Clinical work that must carry a clinician's own name (consulting, prescribing, recording
+ * vitals and history, lab processing and results, dispensing, emergency access). Everyone
+ * else's work can be overseen by the Super Admin, but these actions need a professional
+ * account, so the Super Admin does not hold them.
+ */
+export const CLINICAL_WORK_PERMISSIONS = [
+  'allergy:record',
+  'history:write',
+  'encounter:write',
+  'prescription:create',
+  'prescription:cancel',
+  'lab_order:create',
+  'lab_order:cancel',
+  'followup:recommend',
+  'vitals:record',
+  'prescription:dispense',
+  'dispense:return',
+  'dispense:substitute',
+  'prescription:close',
+  'lab:process',
+  'lab_result:enter',
+  'lab_result:verify',
+  'break_glass:use',
+] as const satisfies readonly PermissionCode[];
+
+/**
+ * The Super Admin runs the hospital like a CEO: every permission except clinical work, in
+ * matrix order. Clinical records are readable for any patient (every read audited).
+ */
+const SUPER_ADMIN_PERMISSIONS: readonly PermissionCode[] = PERMISSIONS.map((p) => p.code).filter(
+  (code) => !(CLINICAL_WORK_PERMISSIONS as readonly string[]).includes(code),
+);
+
 export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
-  SA: [
-    'user:manage',
-    'user_role:assign',
-    'role:manage',
-    'system_settings:manage',
-    'security_settings:manage',
-    'audit:read',
-    'leave:request',
-  ],
+  SA: SUPER_ADMIN_PERMISSIONS,
   ADM: [
     'user:manage',
     'operational_settings:manage',
@@ -156,6 +192,7 @@ export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
     'schedule:manage',
     'fee:manage',
     'nurse_assignment:manage',
+    'appointment:read_all',
     'queue:read',
     'medicine:search',
     'po:approve',
@@ -177,9 +214,11 @@ export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
     'schedule:read',
     'appointment:book',
     'appointment:cancel',
+    'appointment:reschedule',
     'appointment:check_in',
     'appointment:mark_no_show',
     'followup:schedule',
+    'appointment:read_all',
     'queue:read',
     'invoice:read',
     'invoice:issue',

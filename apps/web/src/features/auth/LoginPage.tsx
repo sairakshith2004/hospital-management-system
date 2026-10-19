@@ -1,6 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router';
-import { ApiStatus } from '../../ApiStatus';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { Alert } from '../../components/ui/alert';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
@@ -9,11 +8,14 @@ import { Label } from '../../components/ui/label';
 import { PageSpinner } from '../../components/ui/spinner';
 import { ApiError } from '../../lib/api';
 import { useAuth } from './auth-context';
+import { AuthLayout, PasswordToggle } from './AuthLayout';
 import { safeNext } from './redirect';
 
 function messageFor(err: unknown): string {
   if (err instanceof ApiError) {
     if (err.status === 401) return 'Invalid username or password.';
+    if (err.code === 'ACCOUNT_PENDING')
+      return 'Your account is waiting for approval by a hospital administrator. Please try again later.';
     if (err.status === 429) return 'Too many attempts. Try again in a few minutes.';
     if (err.status === 0) return err.message;
     return err.requestId
@@ -23,18 +25,27 @@ function messageFor(err: unknown): string {
   return 'Sign-in failed. Please try again.';
 }
 
+/**
+ * The main sign-in page in front of the whole app: one username and password form for every
+ * department. After signing in, the portal cards page (PortalsPage) opens. New staff use
+ * "Create an account" (SignupPage).
+ */
 export function LoginPage() {
   const { status, login } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const next = safeNext(params.get('next'));
-  const [username, setUsername] = useState('');
+  const [username, setUsername] = useState(params.get('username') ?? '');
   const [password, setPassword] = useState('');
+  const [shown, setShown] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
   if (status === 'loading') return <PageSpinner label="Checking your session…" />;
-  if (status === 'signedIn' && !submitting) return <Navigate to={next} replace />;
+  /** After signing in, everyone chooses their portal card first, then goes on to `next`. */
+  const portals = `/portals${next !== '/' ? `?next=${encodeURIComponent(next)}` : ''}`;
+  if (status === 'signedIn' && !submitting) return <Navigate to={portals} replace />;
 
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -44,7 +55,7 @@ export function LoginPage() {
     try {
       await login({ username: username.trim(), password });
       setPassword('');
-      navigate(next, { replace: true });
+      navigate(portals, { replace: true });
     } catch (err) {
       setPassword('');
       setError(messageFor(err));
@@ -53,61 +64,91 @@ export function LoginPage() {
   }
 
   return (
-    <main className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-12 dark:bg-slate-950">
-      <div className="w-full max-w-sm space-y-6">
-        <div className="text-center">
-          <h1 className="text-2xl font-semibold text-slate-900 dark:text-white">HospitalOS</h1>
-          <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Staff sign in</p>
-        </div>
-        <Card>
-          <form className="space-y-4" onSubmit={(e) => void onSubmit(e)}>
-            {params.get('expired') === '1' && !error && (
-              <Alert tone="info">Your session has ended. Please sign in again.</Alert>
-            )}
-            {params.get('signedOut') === '1' && !error && (
-              <Alert tone="success">You have signed out.</Alert>
-            )}
-            {error && <Alert tone="error">{error}</Alert>}
-            <div className="space-y-1.5">
-              <Label htmlFor="username">Username</Label>
-              <Input
-                id="username"
-                name="username"
-                autoComplete="username"
-                autoCapitalize="none"
-                spellCheck={false}
-                required
-                maxLength={100}
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                disabled={submitting}
-              />
-            </div>
-            <div className="space-y-1.5">
+    <AuthLayout title="Welcome back" subtitle="Sign in to HospitalOS with your hospital account">
+      {params.get('expired') === '1' && !error && (
+        <Alert tone="info">Your session has ended. Please sign in again.</Alert>
+      )}
+      {params.get('signedOut') === '1' && !error && (
+        <Alert tone="success">You have signed out.</Alert>
+      )}
+      {params.get('created') === '1' && !error && (
+        <Alert tone="success">
+          Account created. A hospital administrator will approve it and give you your role; then
+          sign in here.
+        </Alert>
+      )}
+      <Card className="shadow-lg shadow-brand-900/5">
+        <form className="space-y-4" onSubmit={(e) => void onSubmit(e)}>
+          {error && <Alert tone="error">{error}</Alert>}
+          <div className="space-y-1.5">
+            <Label htmlFor="username">Username</Label>
+            <Input
+              id="username"
+              name="username"
+              placeholder="Your username"
+              autoComplete="username"
+              autoCapitalize="none"
+              spellCheck={false}
+              required
+              maxLength={100}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              disabled={submitting}
+            />
+          </div>
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
               <Label htmlFor="password">Password</Label>
+              <button
+                type="button"
+                onClick={() => setShowForgot((v) => !v)}
+                aria-expanded={showForgot}
+                className="text-xs font-medium text-brand-700 hover:underline dark:text-brand-300"
+              >
+                Forgot password?
+              </button>
+            </div>
+            <div className="relative">
               <Input
                 id="password"
                 name="password"
-                type="password"
+                type={shown ? 'text' : 'password'}
+                placeholder="Your password"
                 autoComplete="current-password"
                 required
                 maxLength={256}
+                className="pr-16"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 disabled={submitting}
                 aria-invalid={error ? true : undefined}
               />
+              <PasswordToggle shown={shown} onToggle={() => setShown((v) => !v)} />
             </div>
-            <Button type="submit" className="w-full" disabled={submitting}>
-              {submitting ? 'Signing in…' : 'Sign in'}
-            </Button>
-          </form>
-        </Card>
-        <p className="text-center text-xs text-slate-500 dark:text-slate-400">
-          Synthetic data only. Not for real patient information.
-        </p>
-        <ApiStatus compact />
-      </div>
-    </main>
+          </div>
+          {showForgot && (
+            <Alert tone="info">
+              Passwords are reset by a hospital administrator. Ask the Administration office to set
+              a new one for you.
+            </Alert>
+          )}
+          <Button type="submit" className="w-full" disabled={submitting}>
+            {submitting ? 'Signing in…' : 'Sign in'}
+          </Button>
+        </form>
+      </Card>
+      <p className="text-center text-sm text-slate-600 dark:text-slate-400">
+        New to the hospital?{' '}
+        <Link
+          to="/signup"
+          className="font-semibold text-brand-700 hover:underline dark:text-brand-300"
+        >
+          Create an account
+        </Link>
+      </p>
+      <p className="text-center text-xs text-slate-500 dark:text-slate-400">
+        After signing in you choose your department portal.
+      </p>
+    </AuthLayout>
   );
 }

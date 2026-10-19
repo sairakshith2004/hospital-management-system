@@ -1,0 +1,2 @@
+ALTER TABLE "users" ADD COLUMN "pending_approval" boolean DEFAULT false NOT NULL;--> statement-breakpoint
+ALTER TABLE "users" ADD CONSTRAINT "users_pending_is_disabled" CHECK (NOT "users"."pending_approval" OR "users"."status" = 'disabled');

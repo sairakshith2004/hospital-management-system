@@ -1,0 +1,1 @@
+ALTER TABLE "appointments" ADD CONSTRAINT "appointments_cancel_reason_required" CHECK ("appointments"."status" <> 'cancelled' OR ("appointments"."cancelled_at" IS NOT NULL AND "appointments"."cancel_reason" IS NOT NULL AND btrim("appointments"."cancel_reason") <> ''));
