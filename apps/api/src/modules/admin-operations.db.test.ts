@@ -331,8 +331,12 @@ describe('HR, finance, equipment and marketing', () => {
           .status,
       ).toBe(200);
       expect(
-        (await hr.post(`/api/hr/leave/${req.body.leaveId}/decide`, { decision: 'rejected' })).body
-          .error.code,
+        (
+          await hr.post(`/api/hr/leave/${req.body.leaveId}/decide`, {
+            decision: 'rejected',
+            note: 'Zz too late',
+          })
+        ).body.error.code,
       ).toBe('INVALID_TRANSITION');
       // HR's own request needs someone else.
       const own = await hr.post('/api/hr/leave', {
@@ -346,6 +350,133 @@ describe('HR, finance, equipment and marketing', () => {
         (await hr.post(`/api/hr/leave/${own.body.leaveId}/decide`, { decision: 'approved' })).body
           .error.code,
       ).toBe('SELF_DECISION');
+    }),
+  );
+
+  it(
+    'only HR decides leave; approval blocks a doctor, rejection needs a reason and does nothing',
+    tx(async () => {
+      const f = await setup();
+      const hr = await f.as(['HR']);
+      const adm = await f.as(['ADM']);
+      const sa = await f.as(['SA']);
+      const doc = await f.as(['DOC']);
+      // Make the DOC account a doctor with a Monday session in 2030.
+      const docEmp = (
+        await client.query<{ id: string }>('SELECT employee_id AS id FROM users WHERE id = $1', [
+          doc.id,
+        ])
+      ).rows[0]!.id;
+      await client.query('UPDATE employees SET department_id = $2 WHERE id = $1', [docEmp, f.dept]);
+      const doctorId = (
+        await adm.post('/api/admin/doctors', {
+          employeeId: docEmp,
+          specialty: 'Zz',
+          registrationNo: 'ZZ-REG-LEAVE',
+          consultationFeePaise: 40000,
+        })
+      ).body.doctorId as string;
+      await adm.post(`/api/doctors/${doctorId}/schedules`, {
+        weekday: 1,
+        startTime: '09:00',
+        endTime: '10:00',
+        slotMinutes: 30,
+        validFrom: '2030-01-01',
+      });
+      const available = async (date: string) =>
+        (await adm.get(`/api/doctors/${doctorId}/availability?date=${date}`)).body.slots.map(
+          (s: { available: boolean }) => s.available,
+        );
+
+      const a = await doc.post('/api/hr/leave', {
+        kind: 'earned',
+        startDate: '2030-01-07',
+        endDate: '2030-01-09',
+        reason: 'Zz holiday',
+      });
+      expect(a.status, JSON.stringify(a.body)).toBe(201);
+      // Overlapping requests are refused while one is pending.
+      expect(
+        (
+          await doc.post('/api/hr/leave', {
+            kind: 'sick',
+            startDate: '2030-01-09',
+            endDate: '2030-01-10',
+            reason: 'Zz',
+          })
+        ).body.error.code,
+      ).toBe('LEAVE_OVERLAP');
+      // Pending leave does not block the doctor.
+      expect(await available('2030-01-07')).toEqual([true, true]);
+
+      // Nobody but HR can see everyone's leave or decide it, not even administrators.
+      for (const other of [adm, sa, doc]) {
+        expect((await other.get('/api/hr/leave?scope=all')).status).toBe(403);
+        expect((await other.get('/api/hr/leave/summary?year=2030')).status).toBe(403);
+        expect(
+          (await other.post(`/api/hr/leave/${a.body.leaveId}/decide`, { decision: 'approved' }))
+            .status,
+        ).toBe(403);
+      }
+
+      const list = (await hr.get('/api/hr/leave?scope=all&status=pending')).body.requests;
+      expect(list.find((r: { id: string }) => r.id === a.body.leaveId)).toMatchObject({
+        days: 3,
+        kind: 'earned',
+        status: 'pending',
+        employee: { department: 'Zz Admin General' },
+        bookedAppointments: 0,
+      });
+      const ok = await hr.post(`/api/hr/leave/${a.body.leaveId}/decide`, { decision: 'approved' });
+      expect(ok.body).toEqual({ ok: true, blockedSchedule: true, bookedAppointments: 0 });
+      expect(await available('2030-01-07')).toEqual([false, false]);
+      expect(await available('2030-01-14')).toEqual([true, true]); // the next Monday is open
+      const mine = (await doc.get('/api/hr/leave')).body.requests[0];
+      expect(mine).toMatchObject({ status: 'approved', decidedBy: expect.any(String) });
+      expect(mine.decidedAt).not.toBeNull();
+
+      // Rejection needs a reason and leaves the schedule open.
+      const b = await doc.post('/api/hr/leave', {
+        kind: 'sick',
+        startDate: '2030-01-14',
+        endDate: '2030-01-14',
+        reason: 'Zz',
+      });
+      expect(
+        (await hr.post(`/api/hr/leave/${b.body.leaveId}/decide`, { decision: 'rejected' })).status,
+      ).toBe(422);
+      expect(
+        (
+          await hr.post(`/api/hr/leave/${b.body.leaveId}/decide`, {
+            decision: 'rejected',
+            note: 'Zz short staffed',
+          })
+        ).body,
+      ).toEqual({ ok: true, blockedSchedule: false, bookedAppointments: 0 });
+      expect(await available('2030-01-14')).toEqual([true, true]);
+      expect(await audit('leave.rejected')).toEqual([
+        expect.objectContaining({ reason: 'Zz short staffed' }),
+      ]);
+
+      // A request across the new year counts its days in each year.
+      const c = await doc.post('/api/hr/leave', {
+        kind: 'casual',
+        startDate: '2030-12-30',
+        endDate: '2031-01-02',
+        reason: 'Zz',
+      });
+      await hr.post(`/api/hr/leave/${c.body.leaveId}/decide`, { decision: 'approved' });
+      const row = async (year: number) =>
+        (await hr.get(`/api/hr/leave/summary?year=${year}`)).body.summary.find(
+          (r: { employeeId: string }) => r.employeeId === docEmp,
+        );
+      expect(await row(2030)).toMatchObject({
+        approvedDays: { casual: 2, sick: 0, earned: 3, other: 0 },
+        totalApprovedDays: 5,
+        pendingRequests: 0,
+        rejectedRequests: 1,
+      });
+      expect((await row(2031)).approvedDays.casual).toBe(2);
     }),
   );
 

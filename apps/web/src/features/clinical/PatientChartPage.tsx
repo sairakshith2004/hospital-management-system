@@ -1,9 +1,10 @@
 import type { AppointmentStatus, PatientChart } from '@hospitalos/shared';
-import { Link, useParams } from 'react-router';
+import { Link, useParams, useSearchParams } from 'react-router';
 import { ForbiddenPage } from '../../app/ForbiddenPage';
 import { NotFoundPage } from '../../app/NotFoundPage';
 import { Alert } from '../../components/ui/alert';
 import { Badge } from '../../components/ui/badge';
+import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
 import { EmptyState } from '../../components/ui/empty-state';
 import { PageHeader } from '../../components/ui/page-header';
@@ -18,11 +19,19 @@ import { AllergyPanel } from './AllergyPanel';
 import { PrescriptionList } from './PrescriptionList';
 import { VitalsTable } from './VitalsTable';
 
-/** The treating doctor's view of the whole record. Every open of this page is audited. */
+/**
+ * The treating doctor's view of the record. By default it holds only this doctor's own
+ * consultations, results and prescriptions; "Previous reports from other doctors" shows
+ * everyone's (?scope=all). Allergies are always complete. Every open is audited.
+ */
 export function PatientChartPage() {
   const { id = '' } = useParams();
   const { can } = useAuth();
-  const q = useApi<{ chart: PatientChart }>(`/api/patients/${id}/chart`, { retry: false });
+  const [params, setParams] = useSearchParams();
+  const all = params.get('scope') === 'all';
+  const q = useApi<{ chart: PatientChart }>(`/api/patients/${id}/chart${all ? '?scope=all' : ''}`, {
+    retry: false,
+  });
   if (q.isPending) return <Spinner label="Loading chart…" />;
   if (q.isError) {
     if (q.error instanceof ApiError && q.error.status === 404) return <NotFoundPage />;
@@ -57,6 +66,23 @@ export function PatientChartPage() {
         }
       />
       <AllergyPanel patientId={p.id} allergies={c.allergies} editable={can('allergy:record')} />
+      {all ? (
+        <Alert tone="info" className="flex flex-wrap items-center justify-between gap-2">
+          <span>Showing records from every doctor at this hospital. This view is recorded.</span>
+          <Button size="sm" variant="secondary" onClick={() => setParams({})}>
+            Show only my records
+          </Button>
+        </Alert>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600 dark:text-slate-400">
+          <span>Showing your own consultations, results and prescriptions for this patient.</span>
+          {c.otherDoctorRecords > 0 && (
+            <Button size="sm" variant="secondary" onClick={() => setParams({ scope: 'all' })}>
+              Previous reports from other doctors ({c.otherDoctorRecords})
+            </Button>
+          )}
+        </div>
+      )}
       <div className="grid gap-4 xl:grid-cols-2">
         <Card className="space-y-3">
           <h2 className="font-semibold">Consultations</h2>
@@ -104,6 +130,7 @@ export function PatientChartPage() {
                   >
                     {o.test.name} · {formatDate(o.orderedAt.slice(0, 10))}
                   </Link>
+                  {all && <span className="text-xs text-slate-500">{o.doctor.fullName}</span>}
                   <Badge tone={o.status === 'verified' ? 'success' : 'info'}>{o.status}</Badge>
                 </li>
               ))}

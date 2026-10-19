@@ -40,12 +40,12 @@ export function AppShell() {
   const sections = navSections(can);
 
   return (
-    <div className="flex min-h-screen flex-col bg-slate-100/60 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <div className="flex min-h-screen flex-col bg-gradient-to-b from-sky-50/70 via-white to-teal-50/40 text-slate-800 dark:bg-slate-950 dark:text-slate-100">
       <div
         aria-hidden="true"
-        className="h-1 bg-gradient-to-r from-brand-700 via-brand-500 to-teal-400"
+        className="h-1 bg-gradient-to-r from-sky-200 via-teal-200 to-violet-200"
       />
-      <header className="sticky top-0 z-30 border-b border-slate-200 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
+      <header className="sticky top-0 z-30 border-b border-sky-100 bg-white/95 backdrop-blur dark:border-slate-800 dark:bg-slate-900/95">
         <div className="flex h-16 items-center justify-between gap-4 px-4 md:px-6">
           <div className="flex items-center gap-3">
             <Button
@@ -60,7 +60,7 @@ export function AppShell() {
             </Button>
             <LogoMark />
             <span className="leading-tight">
-              <span className="block text-lg font-bold tracking-tight text-brand-900 dark:text-white">
+              <span className="block text-lg font-bold tracking-tight text-brand-800 dark:text-white">
                 HospitalOS
               </span>
               <span className="hidden text-xs text-slate-500 sm:block dark:text-slate-400">
@@ -99,14 +99,14 @@ export function AppShell() {
           id="main-nav"
           aria-label="Main"
           className={cn(
-            'w-64 shrink-0 bg-brand-950 px-3 py-5 text-white dark:border-r dark:border-slate-800 dark:bg-slate-900',
+            'w-64 shrink-0 border-r border-sky-100 bg-white px-3 py-5 text-slate-700',
             'fixed top-[4.25rem] bottom-0 left-0 z-20 overflow-y-auto md:sticky md:block md:h-[calc(100vh-4.25rem)]',
             menuOpen ? 'block' : 'hidden',
           )}
         >
           {sections.map(({ section, items }) => (
             <div key={section} className="mb-5">
-              <p className="mb-1.5 px-3 text-[0.7rem] font-semibold tracking-wider text-brand-300/80 uppercase">
+              <p className="mb-1.5 px-3 text-[0.7rem] font-semibold tracking-wider text-slate-400 uppercase">
                 {section}
               </p>
               <ul className="space-y-0.5">
@@ -119,8 +119,8 @@ export function AppShell() {
                         cn(
                           'block rounded-md border-l-[3px] px-3 py-2 text-sm transition-colors',
                           isActive
-                            ? 'border-teal-400 bg-white/10 font-medium text-white'
-                            : 'border-transparent text-brand-100/80 hover:bg-white/5 hover:text-white',
+                            ? 'border-teal-300 bg-sky-50 font-medium text-brand-800'
+                            : 'border-transparent text-slate-600 hover:bg-slate-50 hover:text-slate-900',
                         )
                       }
                     >
@@ -137,7 +137,7 @@ export function AppShell() {
             {error && <Alert tone="error">{error}</Alert>}
             <Outlet />
           </main>
-          <footer className="border-t border-slate-200 bg-white py-3 dark:border-slate-800 dark:bg-slate-900">
+          <footer className="border-t border-sky-100 bg-white/80 py-3 dark:border-slate-800 dark:bg-slate-900">
             <p className="mb-1 text-center text-xs text-slate-500 dark:text-slate-400">
               Synthetic data only. Not for real patient information.
             </p>

@@ -2,7 +2,13 @@
  * The unified app across roles: the sidebar each role sees, and key flows against a fake
  * API (the API's own tests prove the server side). Synthetic data only.
  */
-import { ROLE_PERMISSIONS, type PermissionCode, type RoleCode } from '@hospitalos/shared';
+import {
+  ROLE_PERMISSIONS,
+  hospitalToday,
+  type PermissionCode,
+  type RoleCode,
+} from '@hospitalos/shared';
+import { addDays } from '../lib/format';
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 import { apiError, fakeApi, json, makeUser, renderApp, session } from '../test-utils';
@@ -30,10 +36,22 @@ describe('one app, a sidebar per role', () => {
   it.each<[RoleCode, string[], string[]]>([
     [
       'REC',
-      ['Patients', 'Book appointment', 'Queue', 'Follow-ups', 'Invoices'],
-      ['Prescriptions', 'Lab worklist', 'Audit log', 'Stock'],
+      ['Patients', 'Book appointment', 'Queue', 'Follow-ups', 'Invoices', 'Patients per doctor'],
+      [
+        'Prescriptions',
+        'Lab worklist',
+        'Audit log',
+        'Stock',
+        'My appointments',
+        'Doctor earnings',
+        'My earnings',
+      ],
     ],
-    ['DOC', ['Queue', 'Medicines', 'Patients'], ['Invoices', 'Book appointment', 'Stock', 'Staff']],
+    [
+      'DOC',
+      ['My appointments', 'My earnings', 'Queue', 'Medicines', 'Patients'],
+      ['Invoices', 'Book appointment', 'Stock', 'Staff', 'Doctor earnings', 'Patients per doctor'],
+    ],
     [
       'PHA',
       ['Prescriptions', 'Stock', 'Transfers', 'Invoices'],
@@ -45,7 +63,11 @@ describe('one app, a sidebar per role', () => {
       ['Stock', 'Goods receipts', 'Transfers', 'Suppliers', 'Catalogue', 'Equipment'],
       ['Patients', 'Invoices'],
     ],
-    ['FIN', ['Invoices', 'Price list', 'Expenses', 'Finance summary'], ['Queue', 'Prescriptions']],
+    [
+      'FIN',
+      ['Invoices', 'Price list', 'Expenses', 'Finance summary', 'Doctor earnings'],
+      ['Queue', 'Prescriptions', 'My earnings', 'Patients per doctor'],
+    ],
     ['HR', ['Staff', 'Attendance', 'Leave'], ['Patients', 'Invoices']],
     ['MKT', ['Enquiries', 'Campaigns', 'Leave'], ['Patients', 'Queue', 'Prescriptions']],
     ['SA', ['Staff', 'Settings', 'Audit log'], ['Patients', 'Invoices']],
@@ -61,6 +83,112 @@ describe('one app, a sidebar per role', () => {
     fakeApi({ 'GET /api/auth/me': () => as('MKT') });
     renderApp('/pharmacy');
     expect(await screen.findByRole('heading', { name: /don't have access/i })).toBeTruthy();
+  });
+});
+
+describe('doctor dashboard', () => {
+  it('shows a visit booked at reception for a later day, not only checked-in patients', async () => {
+    const today = hospitalToday();
+    const booked = {
+      id: '00000000-0000-4000-8000-0000000000a9',
+      appointmentNo: 'APT0000009',
+      kind: 'scheduled',
+      status: 'booked',
+      visitDate: addDays(today, 2),
+      slotStart: `${addDays(today, 2)}T03:30:00.000Z`,
+      slotEnd: `${addDays(today, 2)}T03:40:00.000Z`,
+      tokenNo: null,
+      checkedInAt: null,
+      patient: {
+        id: '00000000-0000-4000-8000-0000000000b9',
+        mrn: 'MRN0000099',
+        firstName: 'Zz',
+        lastName: 'Future',
+      },
+      doctor: { id: '00000000-0000-4000-8000-0000000000d1', fullName: 'Dr. Zz Test' },
+      departmentId: '00000000-0000-4000-8000-0000000000e1',
+      rescheduledFromId: null,
+    };
+    const handlers: Record<string, () => Response> = {
+      'GET /api/auth/me': () => as('DOC', { fullName: 'Dr. Zz Test' }),
+    };
+    for (let i = 0; i < 7; i++) {
+      const date = addDays(today, i);
+      handlers[`GET /api/appointments?date=${date}`] = () =>
+        json(200, { appointments: i === 2 ? [booked] : [] });
+    }
+    const api = fakeApi(handlers);
+    renderApp('/');
+    const section = await screen.findByRole('region', { name: /My appointments — next 7 days/ });
+    expect(await within(section).findByText('Zz Future')).toBeTruthy();
+    expect(within(section).getByText('MRN0000099')).toBeTruthy();
+    // The doctor never asks for another doctor's list: no doctorId in any request.
+    expect(api.calls.filter((c) => c.key.includes('doctorId='))).toEqual([]);
+  });
+});
+
+describe('doctor reports', () => {
+  const row = (id: string, name: string, patients: number, billed: string | null) => ({
+    doctorId: id,
+    fullName: name,
+    departmentName: 'Zz Medicine',
+    visits: {
+      patients,
+      booked: 1,
+      waiting: 1,
+      inConsultation: 0,
+      seen: patients - 2,
+      noShow: 0,
+      cancelled: 0,
+    },
+    earnings:
+      billed === null ? null : { consultations: patients - 1, billedPaise: billed, paidPaise: '0' },
+  });
+
+  it('shows finance each doctor’s consultation fees with totals', async () => {
+    const today = hospitalToday();
+    const from = `${today.slice(0, 8)}01`;
+    fakeApi({
+      'GET /api/auth/me': () => as('FIN'),
+      [`GET /api/reports/doctors?from=${from}&to=${today}`]: () =>
+        json(200, {
+          report: {
+            from,
+            to: today,
+            scope: 'all',
+            rows: [
+              row('00000000-0000-4000-8000-0000000000d1', 'Dr. Zz One', 5, '200000'),
+              row('00000000-0000-4000-8000-0000000000d2', 'Dr. Zz Two', 3, '100000'),
+            ],
+          },
+        }),
+    });
+    renderApp('/reports/doctor-earnings');
+    expect(await screen.findByRole('heading', { name: 'Doctor earnings' })).toBeTruthy();
+    const table = await screen.findByRole('table', { name: 'Doctor earnings' });
+    expect(within(table).getByText('Dr. Zz One')).toBeTruthy();
+    expect(within(table).getByText('₹2,000.00')).toBeTruthy();
+    expect(screen.getByText('₹3,000.00')).toBeTruthy(); // total fees billed
+  });
+
+  it('shows reception the patient count per doctor, without earnings', async () => {
+    const today = hospitalToday();
+    fakeApi({
+      'GET /api/auth/me': () => as('REC'),
+      [`GET /api/reports/doctors?from=${today}&to=${today}`]: () =>
+        json(200, {
+          report: {
+            from: today,
+            to: today,
+            scope: 'all',
+            rows: [row('00000000-0000-4000-8000-0000000000d1', 'Dr. Zz One', 4, null)],
+          },
+        }),
+    });
+    renderApp('/reports/doctors');
+    const table = await screen.findByRole('table', { name: 'Patients per doctor' });
+    expect(within(table).getByText('Dr. Zz One')).toBeTruthy();
+    expect(within(table).queryByText(/₹/)).toBeNull();
   });
 });
 

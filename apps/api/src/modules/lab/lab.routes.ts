@@ -26,6 +26,7 @@ import type { Database, Queryable } from '../../db/client.js';
 import { auditContext } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import { requireAnyPermission, requirePermission, requireUser } from '../../middleware/auth.js';
+import { doctorIdOfUser } from '../scheduling/scheduling.repo.js';
 import { authorizeClinicalRead } from '../clinical/access.js';
 import {
   cancelOrder,
@@ -88,10 +89,13 @@ export function labRoutes(db: Database): Router {
       const { rows } = await db.query(
         `SELECT t.id, t.code, t.name, t.sample_type AS "sampleType", t.turnaround_hours AS "turnaroundHours",
               s.price_paise::int AS "pricePaise", t.active,
+              CASE WHEN dep.id IS NULL THEN NULL ELSE json_build_object('id', dep.id, 'name', dep.name) END AS department,
               (SELECT coalesce(json_agg(json_build_object('id', p.id, 'name', p.name, 'unit', p.unit,
                   'refLow', p.ref_low::text, 'refHigh', p.ref_high::text, 'refText', p.ref_text) ORDER BY p.sort_order), '[]')
                FROM lab_test_parameters p WHERE p.test_id = t.id) AS parameters
-       FROM lab_tests t JOIN service_catalogue s ON s.id = t.service_id ORDER BY t.name`,
+       FROM lab_tests t JOIN service_catalogue s ON s.id = t.service_id
+       LEFT JOIN departments dep ON dep.id = s.department_id
+       ORDER BY t.name`,
       );
       res.json({ tests: rows });
     },
@@ -138,7 +142,14 @@ export function labRoutes(db: Database): Router {
       if (!order) throw new AppError(404, 'NOT_FOUND', 'Lab order not found');
       const user = requireUser(res);
       if (!LAB_ROLES.some((p) => user.can(p))) {
-        await authorizeClinicalRead(db, req, res, order.patient.id, 'lab_order');
+        const mine = (await doctorIdOfUser(db, user.id)) === order.doctor.id;
+        await authorizeClinicalRead(
+          db,
+          req,
+          res,
+          order.patient.id,
+          mine ? 'lab_order' : 'lab_order:other_doctor',
+        );
       }
       res.json({ order });
     },

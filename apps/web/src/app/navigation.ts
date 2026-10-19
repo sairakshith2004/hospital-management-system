@@ -50,8 +50,27 @@ export const NAV_ITEMS: NavItem[] = [
     anyOf: ['appointment:book'],
   },
   { label: 'Queue', path: '/queue', section: 'Front desk', anyOf: ['queue:read'] },
+  {
+    label: 'Patients per doctor',
+    path: '/reports/doctors',
+    section: 'Front desk',
+    anyOf: ['appointment:read_all'],
+  },
   { label: 'Follow-ups', path: '/follow-ups', section: 'Front desk', anyOf: ['followup:schedule'] },
   { label: 'Doctors', path: '/doctors', section: 'Front desk', anyOf: ['schedule:read'] },
+  // Doctors only (encounter:write): the API limits these to their own appointments and fees.
+  {
+    label: 'My appointments',
+    path: '/appointments',
+    section: 'Clinical',
+    anyOf: ['encounter:write'],
+  },
+  {
+    label: 'My earnings',
+    path: '/reports/doctor-earnings',
+    section: 'Clinical',
+    anyOf: ['encounter:write'],
+  },
   { label: 'Medicines', path: '/medicines', section: 'Clinical', anyOf: ['medicine:search'] },
   {
     label: 'Prescriptions',
@@ -140,6 +159,12 @@ export const NAV_ITEMS: NavItem[] = [
   {
     label: 'Finance summary',
     path: '/finance/summary',
+    section: 'Finance',
+    anyOf: ['report:finance'],
+  },
+  {
+    label: 'Doctor earnings',
+    path: '/reports/doctor-earnings',
     section: 'Finance',
     anyOf: ['report:finance'],
   },

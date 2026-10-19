@@ -140,11 +140,20 @@ describe('login page (real API contract)', () => {
     const { router } = renderApp('/login');
     await fillAndSubmit('zz_reception', 'synthetic-password', 'Doctor');
     expect((await screen.findByRole('alert')).textContent).toMatch(
-      "This account isn't registered for the Doctor portal.",
+      '“zz_reception” is not a Doctor account. Sign in through the Reception portal instead.',
     );
     expect(api.calls.some((c) => c.key === 'POST /api/auth/logout')).toBe(true);
     expect(router.state.location.pathname).toBe('/login');
     expect(hasCsrfToken()).toBe(false);
+    // The password was right, so the field is not marked invalid.
+    expect(screen.getByLabelText('Password').getAttribute('aria-invalid')).toBeNull();
+
+    // One click moves to the matching portal, keeping the username.
+    fireEvent.click(screen.getByRole('button', { name: 'Switch to Reception' }));
+    expect(await screen.findByRole('heading', { name: 'Reception sign in' })).toBeTruthy();
+    expect((screen.getByLabelText('Username') as HTMLInputElement).value).toBe('zz_reception');
+    expect(router.state.location.search).toContain('portal=reception');
+    expect(screen.queryByRole('alert')).toBeNull();
   });
 
   it('lets an account without a department use the Other staff portal', async () => {

@@ -24,6 +24,7 @@ import { addDays, ageInYears, formatDate, formatDateTime, sexLabel } from '../..
 import { useAction, useApi } from '../../lib/use-api';
 import { hospitalToday } from '@hospitalos/shared';
 import { useAuth } from '../auth/auth-context';
+import { LabTestPicker } from '../lab/LabTestPicker';
 import { AllergyPanel } from './AllergyPanel';
 import { PrescriptionBuilder } from './PrescriptionBuilder';
 import { PrescriptionList } from './PrescriptionList';
@@ -255,8 +256,16 @@ export function EncounterPage() {
         </Section>
 
         <Section title="Lab orders">
+          {(chart.data?.chart.otherDoctorRecords ?? 0) > 0 && (
+            <Link
+              className="text-sm text-brand-700 hover:underline dark:text-brand-400"
+              to={`/patients/${p.id}/chart?scope=all`}
+            >
+              Previous reports from other doctors ({chart.data?.chart.otherDoctorRecords})
+            </Link>
+          )}
           {orders.length === 0 ? (
-            <EmptyState title="No lab orders for this patient" />
+            <EmptyState title="You have not ordered lab tests for this patient" />
           ) : (
             <ul className="space-y-1 text-sm">
               {orders.map((o) => (
@@ -284,30 +293,14 @@ export function EncounterPage() {
           )}
           {open && can('lab_order:create') && (
             <div className="space-y-2">
-              <div className="flex flex-wrap gap-2">
-                {tests.data?.tests
-                  .filter((t) => t.active)
-                  .map((t) => (
-                    <label
-                      key={t.id}
-                      className="flex items-center gap-1.5 rounded-md border border-slate-200 px-2 py-1 text-sm dark:border-slate-700"
-                    >
-                      <input
-                        type="checkbox"
-                        checked={labTests.includes(t.id)}
-                        onChange={(ev) =>
-                          setLabTests((ls) =>
-                            ev.target.checked ? [...ls, t.id] : ls.filter((x) => x !== t.id),
-                          )
-                        }
-                      />
-                      {t.name}
-                    </label>
-                  ))}
-                {tests.data?.tests.length === 0 && (
-                  <p className="text-sm text-slate-600">No lab tests are set up yet.</p>
-                )}
-              </div>
+              {tests.data && (
+                <LabTestPicker
+                  tests={tests.data.tests}
+                  departmentId={e.doctor.departmentId}
+                  selected={labTests}
+                  onChange={setLabTests}
+                />
+              )}
               {lab.error && <Alert tone="error">{lab.error}</Alert>}
               <Button
                 size="sm"

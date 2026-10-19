@@ -43,17 +43,39 @@ const isoDate = z.iso.date('Must be a date (YYYY-MM-DD)');
 
 export const startEncounterSchema = z.strictObject({ chiefComplaint: optional(500) });
 
-/** Plausible ranges only; they catch typing mistakes, not clinical judgement. */
+/**
+ * Plausible ranges for each vital sign. They catch typing mistakes, not clinical judgement;
+ * the form uses them to explain a refusal before sending.
+ */
+export const VITAL_LIMITS = {
+  tempC: { label: 'Temperature', min: 30, max: 45, unit: '°C', whole: false },
+  pulse: { label: 'Pulse', min: 20, max: 250, unit: '/min', whole: true },
+  bpSys: { label: 'BP systolic', min: 50, max: 260, unit: 'mmHg', whole: true },
+  bpDia: { label: 'BP diastolic', min: 20, max: 160, unit: 'mmHg', whole: true },
+  respRate: { label: 'Respiratory rate', min: 4, max: 80, unit: '/min', whole: true },
+  spo2: { label: 'SpO₂', min: 50, max: 100, unit: '%', whole: true },
+  weightKg: { label: 'Weight', min: 0.3, max: 400, unit: 'kg', whole: false },
+  heightCm: { label: 'Height', min: 20, max: 250, unit: 'cm', whole: false },
+} as const;
+export type VitalKey = keyof typeof VITAL_LIMITS;
+
+const vital = (key: VitalKey) => {
+  const l = VITAL_LIMITS[key];
+  const range = `${l.label} must be between ${l.min} and ${l.max} ${l.unit}`;
+  const base = l.whole ? z.int(`${l.label} must be a whole number`) : z.number();
+  return base.min(l.min, range).max(l.max, range).nullable().optional();
+};
+
 export const vitalsSchema = z
   .strictObject({
-    tempC: z.number().min(30).max(45).nullable().optional(),
-    pulse: z.int().min(20).max(250).nullable().optional(),
-    bpSys: z.int().min(50).max(260).nullable().optional(),
-    bpDia: z.int().min(20).max(160).nullable().optional(),
-    respRate: z.int().min(4).max(80).nullable().optional(),
-    spo2: z.int().min(50).max(100).nullable().optional(),
-    weightKg: z.number().min(0.3).max(400).nullable().optional(),
-    heightCm: z.number().min(20).max(250).nullable().optional(),
+    tempC: vital('tempC'),
+    pulse: vital('pulse'),
+    bpSys: vital('bpSys'),
+    bpDia: vital('bpDia'),
+    respRate: vital('respRate'),
+    spo2: vital('spo2'),
+    weightKg: vital('weightKg'),
+    heightCm: vital('heightCm'),
   })
   .refine((v) => Object.values(v).some((x) => x !== null && x !== undefined), {
     message: 'Enter at least one measurement',
@@ -237,7 +259,7 @@ export interface EncounterView {
     dob: string;
     sex: string;
   };
-  doctor: { id: string; fullName: string };
+  doctor: { id: string; fullName: string; departmentId: string };
   notes: ClinicalNote[];
   diagnoses: Diagnosis[];
   vitals: VitalSigns[];
@@ -246,7 +268,17 @@ export interface EncounterView {
 }
 
 /** Everything a treating clinician sees for one patient, newest first. */
+/**
+ * `mine`: only the signed-in doctor's own records (the default). `all`: every doctor's,
+ * opened on purpose with "Previous reports from other doctors" and audited as such.
+ */
+export const CHART_SCOPES = ['mine', 'all'] as const;
+export type ChartScope = (typeof CHART_SCOPES)[number];
+
 export interface PatientChart {
+  scope: ChartScope;
+  /** Consultations, lab orders and prescriptions by other doctors (hidden when scope is mine). */
+  otherDoctorRecords: number;
   patient: {
     id: string;
     mrn: string;
@@ -289,4 +321,5 @@ export interface LabOrderSummary {
   test: { id: string; code: string; name: string };
   orderedAt: string;
   verifiedAt: string | null;
+  doctor: { id: string; fullName: string };
 }

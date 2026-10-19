@@ -28,16 +28,18 @@ export function HomePage() {
   const widgets = DASHBOARD_WIDGETS.filter((w) => w.anyOf.some((p) => can(p)));
   return (
     <div className="space-y-6">
-      <section className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-brand-800 via-brand-700 to-teal-600 px-6 py-7 text-white shadow-md shadow-brand-900/10 md:px-8">
+      <section className="relative overflow-hidden rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-100 via-violet-50 to-teal-100 px-6 py-7 text-brand-900 shadow-sm shadow-sky-100 md:px-8">
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -top-16 -right-10 size-56 rounded-full bg-white/10"
+          className="pointer-events-none absolute -top-16 -right-10 size-56 rounded-full bg-white/50"
         />
-        <p className="relative text-sm text-brand-100">{formatLongDate(hospitalToday())}</p>
+        <p className="relative text-sm font-medium text-brand-700">
+          {formatLongDate(hospitalToday())}
+        </p>
         <h1 className="relative mt-1 text-2xl font-bold tracking-tight md:text-3xl">
           Welcome, {user.fullName}
         </h1>
-        <p className="relative mt-2 max-w-2xl text-sm text-brand-100">
+        <p className="relative mt-2 max-w-2xl text-sm text-slate-600">
           Your dashboard shows today&apos;s work for the areas your role covers.
         </p>
       </section>

@@ -111,7 +111,7 @@ export const DEMO_STAFF: DemoStaff[] = [
     role: 'MKT',
   },
   {
-    username: 'doc1',
+    username: 'ananya',
     employeeNo: 'DEMO-101',
     fullName: 'Dr. Ananya Rao',
     department: 'GEN_MED',
@@ -125,7 +125,7 @@ export const DEMO_STAFF: DemoStaff[] = [
     },
   },
   {
-    username: 'doc2',
+    username: 'vikram',
     employeeNo: 'DEMO-102',
     fullName: 'Dr. Vikram Shah',
     department: 'PAED',
@@ -139,7 +139,7 @@ export const DEMO_STAFF: DemoStaff[] = [
     },
   },
   {
-    username: 'doc3',
+    username: 'meera',
     employeeNo: 'DEMO-103',
     fullName: 'Dr. Meera Iyer',
     department: 'ORTHO',
@@ -153,7 +153,7 @@ export const DEMO_STAFF: DemoStaff[] = [
     },
   },
   {
-    username: 'doc4',
+    username: 'arjun',
     employeeNo: 'DEMO-104',
     fullName: 'Dr. Arjun Menon',
     department: 'DERM',
@@ -167,7 +167,7 @@ export const DEMO_STAFF: DemoStaff[] = [
     },
   },
   {
-    username: 'doc5',
+    username: 'kavya',
     employeeNo: 'DEMO-105',
     fullName: 'Dr. Kavya Nair',
     department: 'ENT',
@@ -181,7 +181,7 @@ export const DEMO_STAFF: DemoStaff[] = [
     },
   },
   {
-    username: 'doc6',
+    username: 'rohan',
     employeeNo: 'DEMO-106',
     fullName: 'Dr. Rohan Das',
     department: 'GEN_MED',

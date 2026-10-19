@@ -49,7 +49,7 @@ export function AppointmentsPage() {
   return (
     <div className="space-y-4">
       <PageHeader
-        title="Appointments"
+        title={can('appointment:read_all') ? 'Appointments' : 'My appointments'}
         description={formatDate(date)}
         actions={
           can('appointment:book') && (

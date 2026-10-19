@@ -1,5 +1,5 @@
 import { hospitalToday } from '@hospitalos/shared';
-import { useQuery } from '@tanstack/react-query';
+import { useQueries, useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { Alert } from '../components/ui/alert';
 import { Button } from '../components/ui/button';
@@ -8,9 +8,12 @@ import { Stat } from '../components/ui/stat';
 import { useAuth } from '../features/auth/auth-context';
 import { getQueue, listAppointments, schedulingKeys } from '../features/scheduling/scheduling-api';
 import type { InvoiceSummary, LabOrderView, StaffAccount, StockItemView } from '@hospitalos/shared';
-import { formatRupees } from '../lib/format';
+import { addDays, formatDate, formatRupees, formatTime } from '../lib/format';
+import { StatusBadge } from '../features/scheduling/status';
 import { useApi } from '../lib/use-api';
 import type { DashboardWidget } from './HomePage';
+import { monthStart, useDoctorReport } from '../features/reports/DoctorReportPage';
+import { Table, Td, Th } from '../components/ui/table';
 
 export function WidgetSection({
   title,
@@ -91,6 +94,178 @@ function MyQueue() {
           <Stat label="Waiting" value={waiting} to="/queue" />
           <Stat label="In consultation" value={inRoom} to="/queue" />
         </div>
+      )}
+    </WidgetSection>
+  );
+}
+
+/** Days ahead (including today) the doctor's upcoming list covers. */
+export const UPCOMING_DAYS = 7;
+
+/**
+ * The doctor's own booked visits for the next week, so a booking made at reception shows up
+ * here straight away (the queue only lists patients who have checked in). The API limits
+ * the list to the caller's own appointments; cancelled and no-show visits are left out.
+ */
+function MyUpcomingAppointments() {
+  const today = hospitalToday();
+  const days = Array.from({ length: UPCOMING_DAYS }, (_, i) => addDays(today, i));
+  const results = useQueries({
+    queries: days.map((date) => ({
+      queryKey: schedulingKeys.appointments(date),
+      queryFn: ({ signal }: { signal: AbortSignal }) => listAppointments({ date }, signal),
+      refetchInterval: 30_000,
+    })),
+  });
+  if (results.some((r) => r.isError)) return null; // e.g. no doctor profile: the Queue page explains.
+  const pending = results.some((r) => r.isPending);
+  const upcoming = results
+    .flatMap((r) => r.data ?? [])
+    .filter(
+      (a) => a.status === 'booked' || a.status === 'checked_in' || a.status === 'in_consultation',
+    )
+    .sort((a, b) =>
+      `${a.visitDate}${a.slotStart ?? ''}`.localeCompare(`${b.visitDate}${b.slotStart ?? ''}`),
+    );
+  return (
+    <WidgetSection
+      title={`My appointments — next ${UPCOMING_DAYS} days`}
+      action={
+        <Button asChild size="sm" variant="secondary">
+          <Link to="/appointments">All my appointments</Link>
+        </Button>
+      }
+    >
+      {pending ? (
+        <Spinner />
+      ) : upcoming.length === 0 ? (
+        <p className="rounded-xl border border-sky-100 bg-white p-4 text-sm text-slate-600">
+          No appointments booked for you in the next {UPCOMING_DAYS} days.
+        </p>
+      ) : (
+        <ul className="divide-y divide-sky-100 overflow-hidden rounded-xl border border-sky-100 bg-white">
+          {upcoming.map((a) => (
+            <li key={a.id}>
+              <Link
+                to={`/appointments/${a.id}`}
+                className="flex flex-wrap items-center gap-x-4 gap-y-1 px-4 py-3 text-sm hover:bg-sky-50"
+              >
+                <span className="w-40 font-medium text-brand-800 tabular-nums">
+                  {a.visitDate === today ? 'Today' : formatDate(a.visitDate)}
+                  {a.slotStart ? `, ${formatTime(a.slotStart)}` : ''}
+                </span>
+                <span className="min-w-0 flex-1">
+                  {a.patient.firstName} {a.patient.lastName}
+                  <span className="ml-2 font-mono text-xs text-slate-500">{a.patient.mrn}</span>
+                </span>
+                <StatusBadge status={a.status} />
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </WidgetSection>
+  );
+}
+
+/** Reception and administration: how many patients each doctor has today. */
+function PatientsPerDoctorToday() {
+  const today = hospitalToday();
+  const q = useDoctorReport(today, today);
+  if (q.isError) return null;
+  const rows = q.data?.report.rows ?? [];
+  return (
+    <WidgetSection
+      title="Patients per doctor today"
+      action={
+        <Button asChild size="sm" variant="secondary">
+          <Link to="/reports/doctors">Open report</Link>
+        </Button>
+      }
+    >
+      {q.isPending ? (
+        <Spinner />
+      ) : (
+        <Table aria-label="Patients per doctor today">
+          <thead>
+            <tr>
+              <Th>Doctor</Th>
+              <Th className="text-right">Patients</Th>
+              <Th className="text-right">Booked</Th>
+              <Th className="text-right">Waiting</Th>
+              <Th className="text-right">Seen</Th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r) => (
+              <tr key={r.doctorId}>
+                <Td>
+                  {r.fullName}
+                  <span className="block text-xs text-slate-500">{r.departmentName ?? '—'}</span>
+                </Td>
+                <Td className="text-right font-semibold tabular-nums">{r.visits.patients}</Td>
+                <Td className="text-right tabular-nums">{r.visits.booked}</Td>
+                <Td className="text-right tabular-nums">{r.visits.waiting}</Td>
+                <Td className="text-right tabular-nums">{r.visits.seen}</Td>
+              </tr>
+            ))}
+          </tbody>
+        </Table>
+      )}
+    </WidgetSection>
+  );
+}
+
+/** A doctor's own day: patients and consultation fees billed (today and this month). */
+function MyDay() {
+  const today = hospitalToday();
+  const day = useDoctorReport(today, today);
+  const month = useDoctorReport(monthStart(today), today);
+  if (day.isError || month.isError) return null; // e.g. no doctor profile
+  const d = day.data?.report.rows[0];
+  const m = month.data?.report.rows[0];
+  return (
+    <WidgetSection title="My day">
+      {day.isPending || month.isPending ? (
+        <Spinner />
+      ) : !d ? null : (
+        <div className="grid grid-cols-2 gap-3 md:grid-cols-5">
+          <Stat label="Patients today" value={d.visits.patients} to="/appointments" />
+          <Stat label="Waiting" value={d.visits.waiting} to="/queue" />
+          <Stat label="Seen" value={d.visits.seen} />
+          <Stat
+            label="Fees billed today"
+            value={formatRupees(Number(d.earnings?.billedPaise ?? 0))}
+            to="/reports/doctor-earnings"
+          />
+          <Stat
+            label="Fees billed this month"
+            value={formatRupees(Number(m?.earnings?.billedPaise ?? 0))}
+            to="/reports/doctor-earnings"
+          />
+        </div>
+      )}
+    </WidgetSection>
+  );
+}
+
+/** Finance: consultation fees billed this month across doctors. */
+function DoctorEarningsMonth() {
+  const today = hospitalToday();
+  const q = useDoctorReport(monthStart(today), today);
+  if (q.isError) return null;
+  const rows = q.data?.report.rows ?? [];
+  const billed = rows.reduce((t, r) => t + Number(r.earnings?.billedPaise ?? 0), 0);
+  const consults = rows.reduce((t, r) => t + (r.earnings?.consultations ?? 0), 0);
+  return (
+    <WidgetSection title="Doctor earnings this month">
+      {q.isPending ? (
+        <Spinner />
+      ) : (
+        <Grid>
+          <Stat label="Consultations billed" value={consults} to="/reports/doctor-earnings" />
+          <Stat label="Fees billed" value={formatRupees(billed)} to="/reports/doctor-earnings" />
+        </Grid>
       )}
     </WidgetSection>
   );
@@ -322,10 +497,14 @@ function AccessWork() {
 /** Widgets in display order. Each loads its own real data. */
 export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   { key: 'front-desk', anyOf: ['appointment:read_all'], Component: FrontDeskToday },
+  { key: 'doctors-today', anyOf: ['appointment:read_all'], Component: PatientsPerDoctorToday },
+  { key: 'my-day', anyOf: ['encounter:write'], Component: MyDay },
   { key: 'my-queue', anyOf: ['encounter:write'], Component: MyQueue },
+  { key: 'my-upcoming', anyOf: ['encounter:write'], Component: MyUpcomingAppointments },
   { key: 'my-consultations', anyOf: ['encounter:write'], Component: MyConsultations },
   { key: 'follow-ups', anyOf: ['followup:schedule'], Component: FollowUpWork },
   { key: 'billing', anyOf: ['invoice:issue'], Component: BillingWork },
+  { key: 'doctor-earnings', anyOf: ['report:finance'], Component: DoctorEarningsMonth },
   { key: 'pharmacy', anyOf: ['prescription:dispense'], Component: PharmacyWork },
   { key: 'store', anyOf: ['goods_receipt:create'], Component: StoreWork },
   { key: 'lab', anyOf: ['lab:process', 'lab_result:verify'], Component: LabWork },

@@ -30,10 +30,12 @@ export function Stat({
     </>
   );
   const cls = cn(
-    'block rounded-xl border border-l-4 border-slate-200/80 bg-white p-4 shadow-sm shadow-slate-900/5 dark:border-slate-700 dark:bg-slate-900',
-    tone === 'default' && 'border-l-brand-500',
-    tone === 'warning' && 'border-l-amber-500',
-    tone === 'danger' && 'border-l-red-500',
+    'block rounded-xl border border-l-4 p-4 shadow-sm shadow-slate-900/5',
+    tone === 'default' && 'border-sky-100 border-l-sky-300 bg-gradient-to-br from-white to-sky-50',
+    tone === 'warning' &&
+      'border-amber-100 border-l-amber-300 bg-gradient-to-br from-white to-amber-50',
+    tone === 'danger' &&
+      'border-rose-100 border-l-rose-300 bg-gradient-to-br from-white to-rose-50',
   );
   return to ? (
     <Link

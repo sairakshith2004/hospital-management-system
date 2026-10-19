@@ -39,6 +39,7 @@ import { EnquiriesPage } from './features/operations/EnquiriesPage';
 import { EquipmentPage } from './features/operations/EquipmentPage';
 import { ExpensesPage } from './features/operations/ExpensesPage';
 import { FinanceSummaryPage } from './features/operations/FinanceSummaryPage';
+import { DoctorReportPage } from './features/reports/DoctorReportPage';
 import { LeavePage } from './features/operations/LeavePage';
 import { DispensePage } from './features/pharmacy/DispensePage';
 import { PharmacyQueuePage } from './features/pharmacy/PharmacyQueuePage';
@@ -210,6 +211,16 @@ export const routes: RouteObject[] = [
             <ExpensesPage />,
           ),
           guarded('finance/summary', ['report:finance'], <FinanceSummaryPage />),
+          guarded(
+            'reports/doctors',
+            ['appointment:read_all', 'report:finance', 'encounter:write'],
+            <DoctorReportPage view="visits" />,
+          ),
+          guarded(
+            'reports/doctor-earnings',
+            ['report:finance', 'encounter:write'],
+            <DoctorReportPage view="earnings" />,
+          ),
           guarded('equipment', ['equipment:manage', 'maintenance:log'], <EquipmentPage />),
           guarded('enquiries', ['enquiry:manage'], <EnquiriesPage />),
           guarded('campaigns', ['campaign:manage', 'report:marketing'], <CampaignsPage />),

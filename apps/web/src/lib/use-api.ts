@@ -20,7 +20,10 @@ export function useApi<T>(
 }
 
 export function errorMessage(err: unknown): string {
-  return err instanceof ApiError ? err.message : 'Something went wrong. Please try again.';
+  if (!(err instanceof ApiError)) return 'Something went wrong. Please try again.';
+  // A validation refusal lists what to fix, e.g. "Pulse must be between 20 and 250 /min".
+  const fixes = [...new Set((err.details ?? []).map((d) => d.message))];
+  return fixes.length > 0 ? `Please check: ${fixes.join('; ')}.` : err.message;
 }
 
 /** The API's error code, for flows that react to a specific refusal (e.g. ALLERGY_CONFLICT). */
@@ -43,6 +46,19 @@ export function useInvalidate() {
 }
 
 /**
+ * The JSON sent for an action. When the path is built from the body, the record's `id` is
+ * already in the URL (for example /api/hr/leave/:id/decide), so it is left out of the body:
+ * the API's strict schemas reject any field they don't expect.
+ */
+export function requestBody(body: object | undefined, idInPath: boolean): object {
+  if (!body) return {};
+  if (!idInPath || !('id' in body)) return body;
+  const rest: Record<string, unknown> = { ...body };
+  delete rest.id;
+  return rest;
+}
+
+/**
  * A write: POST/PATCH `path` with a body. Keeps a human-readable error and the API error
  * code; reloads the given path prefixes on success.
  */
@@ -59,7 +75,10 @@ export function useAction<TBody extends object | undefined, TRes = unknown>(
   const [code, setCode] = useState<string | null>(null);
   const mutation = useMutation({
     mutationFn: (body: TBody) =>
-      apiFetch<TRes>(typeof path === 'function' ? path(body) : path, { method, body: body ?? {} }),
+      apiFetch<TRes>(typeof path === 'function' ? path(body) : path, {
+        method,
+        body: requestBody(body, typeof path === 'function'),
+      }),
     onMutate: () => {
       setError(null);
       setCode(null);

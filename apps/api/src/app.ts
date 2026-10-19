@@ -16,6 +16,7 @@ import { clinicalRoutes } from './modules/clinical/clinical.routes.js';
 import { departmentRoutes, doctorRoutes } from './modules/directory/directory.routes.js';
 import { inventoryRoutes } from './modules/inventory/inventory.routes.js';
 import { operationsRoutes } from './modules/operations/operations.routes.js';
+import { reportRoutes } from './modules/reports/doctor-report.routes.js';
 import { labRoutes } from './modules/lab/lab.routes.js';
 import { patientRoutes } from './modules/patients/patients.routes.js';
 import { pharmacyRoutes } from './modules/pharmacy/pharmacy.routes.js';
@@ -91,6 +92,7 @@ export function createApp({
     api.use(billingRoutes(db));
     api.use(adminRoutes(db));
     api.use(operationsRoutes(db));
+    api.use(reportRoutes(db));
   }
   app.use('/api', api);
 

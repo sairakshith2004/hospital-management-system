@@ -11,7 +11,7 @@ import { cn } from '../../lib/utils';
 import { PageSpinner } from '../../components/ui/spinner';
 import { ApiError } from '../../lib/api';
 import { useAuth } from './auth-context';
-import { accountFitsPortal, findPortal, OTHER_STAFF, PORTALS } from './portals';
+import { accountFitsPortal, findPortal, OTHER_STAFF, PORTALS, type Portal } from './portals';
 import { safeNext } from './redirect';
 
 function messageFor(err: unknown): string {
@@ -36,6 +36,8 @@ export function LoginPage() {
   const [password, setPassword] = useState('');
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  /** Portals that fit the account after a wrong-portal sign-in (the password was right). */
+  const [suggested, setSuggested] = useState<Portal[] | null>(null);
 
   if (status === 'loading') return <PageSpinner label="Checking your session…" />;
   if (status === 'signedIn' && !submitting) return <Navigate to={next} replace />;
@@ -45,6 +47,7 @@ export function LoginPage() {
     if (key) p.set('portal', key);
     else p.delete('portal');
     setError(null);
+    setSuggested(null);
     setParams(p, { replace: true });
   }
 
@@ -52,6 +55,7 @@ export function LoginPage() {
     event.preventDefault();
     if (submitting) return;
     setError(null);
+    setSuggested(null);
     setSubmitting(true);
     try {
       const user = await login({ username: username.trim(), password });
@@ -59,8 +63,12 @@ export function LoginPage() {
       if (portal && !accountFitsPortal(portal, user.roles)) {
         // Display rule only: the server already limits this account to its own permissions.
         await logout().catch(() => undefined);
+        const fits = PORTALS.filter((p) => accountFitsPortal(p, user.roles));
+        setSuggested(fits);
         setError(
-          `This account isn't registered for the ${portal.label} portal. Choose the portal that matches your role.`,
+          fits.length > 0
+            ? `“${user.username}” is not a ${portal.label} account. Sign in through the ${fits.map((p) => p.label).join(' or ')} portal instead.`
+            : `This account isn't registered for the ${portal.label} portal. Choose the portal that matches your role.`,
         );
         setSubmitting(false);
         return;
@@ -74,28 +82,28 @@ export function LoginPage() {
   }
 
   return (
-    <main className="grid min-h-screen bg-slate-100/60 lg:grid-cols-[1.1fr_1fr] dark:bg-slate-950">
+    <main className="grid min-h-screen bg-white lg:grid-cols-[1.1fr_1fr] dark:bg-slate-950">
       <section
         aria-label="About HospitalOS"
-        className="relative hidden overflow-hidden bg-gradient-to-br from-brand-900 via-brand-800 to-teal-700 p-12 text-white lg:flex lg:flex-col lg:justify-between"
+        className="relative hidden overflow-hidden bg-gradient-to-br from-sky-100 via-white to-teal-100 p-12 text-brand-900 lg:flex lg:flex-col lg:justify-between"
       >
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -top-24 -right-24 size-96 rounded-full bg-white/5"
+          className="pointer-events-none absolute -top-24 -right-24 size-96 rounded-full bg-violet-100/70"
         />
         <div
           aria-hidden="true"
-          className="pointer-events-none absolute -bottom-32 -left-16 size-80 rounded-full bg-teal-300/10"
+          className="pointer-events-none absolute -bottom-32 -left-16 size-80 rounded-full bg-pink-100/70"
         />
         <div className="relative flex items-center gap-3">
-          <LogoMark className="size-11 from-white/20 to-white/10 ring-1 ring-white/30" />
+          <LogoMark className="size-11" />
           <p className="text-xl font-bold tracking-tight">HospitalOS</p>
         </div>
         <div className="relative max-w-md space-y-6">
           <p className="text-3xl leading-tight font-semibold">
             One hospital, one record — every department connected.
           </p>
-          <ul className="space-y-3 text-sm text-brand-100">
+          <ul className="space-y-3 text-sm text-slate-700">
             {[
               'Reception, appointments and doctor queues',
               'Consultations, prescriptions and lab results',
@@ -104,7 +112,7 @@ export function LoginPage() {
               <li key={line} className="flex items-center gap-3">
                 <span
                   aria-hidden="true"
-                  className="inline-flex size-6 items-center justify-center rounded-full bg-teal-400/20 text-teal-200"
+                  className="inline-flex size-6 items-center justify-center rounded-full bg-teal-100 text-teal-700"
                 >
                   ✓
                 </span>
@@ -113,7 +121,7 @@ export function LoginPage() {
             ))}
           </ul>
         </div>
-        <p className="relative text-xs text-brand-200/80">
+        <p className="relative text-xs text-slate-500">
           Access is limited to authorised hospital staff. Activity is audited.
         </p>
       </section>
@@ -163,7 +171,25 @@ export function LoginPage() {
                 </button>
               </div>
               <form className="space-y-4" onSubmit={(e) => void onSubmit(e)}>
-                {error && <Alert tone="error">{error}</Alert>}
+                {error && (
+                  <Alert tone="error">
+                    {error}
+                    {suggested && suggested.length > 0 && (
+                      <span className="mt-2 flex flex-wrap gap-2">
+                        {suggested.map((p) => (
+                          <Button
+                            key={p.key}
+                            size="sm"
+                            variant="secondary"
+                            onClick={() => choosePortal(p.key)}
+                          >
+                            Switch to {p.label}
+                          </Button>
+                        ))}
+                      </span>
+                    )}
+                  </Alert>
+                )}
                 <div className="space-y-1.5">
                   <Label htmlFor="username">Username</Label>
                   <Input
@@ -191,7 +217,7 @@ export function LoginPage() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     disabled={submitting}
-                    aria-invalid={error ? true : undefined}
+                    aria-invalid={error && !suggested ? true : undefined}
                   />
                 </div>
                 <Button type="submit" className="w-full" disabled={submitting}>

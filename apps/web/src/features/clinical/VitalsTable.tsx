@@ -3,6 +3,7 @@ import { EmptyState } from '../../components/ui/empty-state';
 import { Table, Td, Th } from '../../components/ui/table';
 import { formatDateTime } from '../../lib/format';
 import { cn } from '../../lib/utils';
+import { toFahrenheit } from './VitalsForm';
 
 export function VitalsTable({ vitals }: { vitals: VitalSigns[] }) {
   if (vitals.length === 0) return <EmptyState title="No vital signs recorded" />;
@@ -30,7 +31,11 @@ export function VitalsTable({ vitals }: { vitals: VitalSigns[] }) {
                 {r.enteredInError ? ' · entered in error' : ''}
               </span>
             </Td>
-            <Td>{v(r.tempC)}</Td>
+            <Td>
+              {r.tempC === null
+                ? '—'
+                : `${toFahrenheit(Number(r.tempC))} °F (${Number(r.tempC)} °C)`}
+            </Td>
             <Td>{v(r.pulse)}</Td>
             <Td>{r.bpSys === null ? '—' : `${r.bpSys}/${r.bpDia}`}</Td>
             <Td>{v(r.respRate)}</Td>

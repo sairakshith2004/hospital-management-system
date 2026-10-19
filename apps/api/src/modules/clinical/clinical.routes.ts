@@ -11,7 +11,9 @@
  *   POST /api/encounters/:id/prescriptions      prescription:create
  *   POST /api/encounters/:id/complete           encounter:write
  *   POST /api/vitals/:id/entered-in-error       vitals:record
- *   GET  /api/patients/:id/chart                patient:read_clinical (care relationship; audited read)
+ *   GET  /api/patients/:id/chart?scope=mine|all patient:read_clinical (care relationship; audited read).
+ *                                               mine (default): only this doctor's records; all: every
+ *                                               doctor's ("previous reports", audited as chart:all_doctors)
  *   POST /api/patients/:id/allergies            allergy:record (care relationship)
  *   POST /api/allergies/:id/deactivate          allergy:record (care relationship)
  *   POST /api/prescriptions/:id/cancel          prescription:cancel (prescriber, nothing dispensed)
@@ -19,6 +21,7 @@
  *   POST /api/follow-ups/:id/status             followup:schedule
  */
 import {
+  CHART_SCOPES,
   allergySchema,
   cancelPrescriptionSchema,
   diagnosisSchema,
@@ -136,7 +139,14 @@ export function clinicalRoutes(db: Database): Router {
 
   router.get('/encounters/:id', canRead, async (req, res) => {
     const e = await encounterOr404(uuid(req.params.id, 'Encounter'));
-    await authorizeClinicalRead(db, req, res, e.patient.id, 'encounter');
+    const mine = (await doctorIdOfUser(db, requireUser(res).id)) === e.doctor.id;
+    await authorizeClinicalRead(
+      db,
+      req,
+      res,
+      e.patient.id,
+      mine ? 'encounter' : 'encounter:other_doctor',
+    );
     res.json({ encounter: e });
   });
 
@@ -219,8 +229,16 @@ export function clinicalRoutes(db: Database): Router {
     const patientId = uuid(req.params.id, 'Patient');
     const exists = await db.query('SELECT 1 FROM patients WHERE id = $1', [patientId]);
     if (!exists.rowCount) throw new AppError(404, 'NOT_FOUND', 'Patient not found');
-    await authorizeClinicalRead(db, req, res, patientId, 'chart');
-    res.json({ chart: await findPatientChart(db, patientId) });
+    const { scope } = z.object({ scope: z.enum(CHART_SCOPES).default('mine') }).parse(req.query);
+    // Other doctors' records are shown only when asked for, and that read is audited as such.
+    const doctorId = await authorizeClinicalRead(
+      db,
+      req,
+      res,
+      patientId,
+      scope === 'all' ? 'chart:all_doctors' : 'chart',
+    );
+    res.json({ chart: await findPatientChart(db, patientId, scope === 'all' ? null : doctorId) });
   });
 
   router.post(

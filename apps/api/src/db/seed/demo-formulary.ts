@@ -21,6 +21,7 @@
 import { STRENGTH_UNITS, type DOSAGE_FORMS, type ROUTES } from '@hospitalos/shared';
 import { SYSTEM, recordAudit } from '../../lib/audit.js';
 import type { Queryable } from '../client.js';
+import { SPECIALTY_CLASSES } from './demo-formulary-specialty.js';
 
 const LOCK = 4_200_407;
 
@@ -1677,8 +1678,11 @@ const CLASSES: Record<string, Row[]> = {
   ],
 };
 
-/** The formulary, flattened. Exported for tests and the README. */
-export const FORMULARY: FormularyProduct[] = Object.entries(CLASSES).flatMap(([category, rows]) =>
+/** The formulary, flattened (general classes, then the specialty classes). */
+export const FORMULARY: FormularyProduct[] = Object.entries({
+  ...CLASSES,
+  ...SPECIALTY_CLASSES,
+}).flatMap(([category, rows]) =>
   rows.map(([sku, brand, form, route, unit, composition, price, packSize, rxOnly, stock]) => ({
     sku,
     brand,

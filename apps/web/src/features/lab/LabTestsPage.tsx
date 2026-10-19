@@ -8,11 +8,13 @@ import { FormField } from '../../components/ui/form-field';
 import { Input } from '../../components/ui/input';
 import { MoneyInput } from '../../components/ui/money-input';
 import { PageHeader } from '../../components/ui/page-header';
+import { Select } from '../../components/ui/select';
 import { Spinner } from '../../components/ui/spinner';
 import { Table, Td, Th } from '../../components/ui/table';
 import { formatRupees } from '../../lib/format';
 import { useAction, useApi } from '../../lib/use-api';
 import { useAuth } from '../auth/auth-context';
+import { formatReference, matchesLabTest } from './lab-test-search';
 
 export function LabTestsPage() {
   const { can } = useAuth();
@@ -28,6 +30,20 @@ export function LabTestsPage() {
     },
   });
   const num = (v: string) => (v.trim() === '' ? null : Number(v));
+  const [search, setSearch] = useState('');
+  const [dept, setDept] = useState('');
+  const departments = [
+    ...new Map(
+      (q.data?.tests ?? []).flatMap((t) =>
+        t.department ? [[t.department.id, t.department.name]] : [],
+      ) as [string, string][],
+    ),
+  ].sort((a, b) => a[1].localeCompare(b[1]));
+  const shown = (q.data?.tests ?? []).filter(
+    (t) =>
+      matchesLabTest(t, search) &&
+      (dept === '' || (dept === 'general' ? !t.department : t.department?.id === dept)),
+  );
   return (
     <div className="space-y-4">
       <PageHeader
@@ -128,32 +144,60 @@ export function LabTestsPage() {
       {q.isPending && <Spinner />}
       {q.data && q.data.tests.length === 0 && <EmptyState title="No tests set up yet" />}
       {q.data && q.data.tests.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          <Input
+            type="search"
+            className="min-w-0 flex-1"
+            aria-label="Search lab tests"
+            placeholder={`Search ${q.data.tests.length} tests by name, code or sample`}
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <Select
+            aria-label="Department"
+            className="w-auto"
+            value={dept}
+            onChange={(e) => setDept(e.target.value)}
+          >
+            <option value="">All departments</option>
+            <option value="general">General tests</option>
+            {departments.map(([id, name]) => (
+              <option key={id} value={id}>
+                {name}
+              </option>
+            ))}
+          </Select>
+        </div>
+      )}
+      {q.data && q.data.tests.length > 0 && shown.length === 0 && (
+        <EmptyState title={`No tests match “${search}”`} />
+      )}
+      {shown.length > 0 && (
         <Table aria-label="Lab tests">
           <thead>
             <tr>
               <Th>Code</Th>
               <Th>Test</Th>
+              <Th>Department</Th>
               <Th>Sample</Th>
               <Th>Parameters</Th>
               <Th>Price</Th>
             </tr>
           </thead>
           <tbody>
-            {q.data.tests.map((t) => (
+            {shown.map((t) => (
               <tr key={t.id}>
                 <Td className="font-mono">{t.code}</Td>
                 <Td>
                   {t.name}
                   <span className="block text-xs text-slate-500">{t.turnaroundHours} h</span>
                 </Td>
+                <Td className="text-sm">{t.department?.name ?? 'General'}</Td>
                 <Td>{t.sampleType}</Td>
                 <Td className="text-xs">
                   {t.parameters.map((p) => (
                     <span key={p.id} className="block">
-                      {p.name} {p.unit ? `(${p.unit})` : ''}{' '}
-                      {p.refLow !== null || p.refHigh !== null
-                        ? `${p.refLow !== null ? Number(p.refLow) : ''}–${p.refHigh !== null ? Number(p.refHigh) : ''}`
-                        : ''}
+                      {p.name} {p.unit ? `(${p.unit})` : ''} {formatReference(p)}
                     </span>
                   ))}
                 </Td>

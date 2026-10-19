@@ -565,6 +565,44 @@ describe('workflows A, B and C: visit → consultation → pharmacy, lab and bil
       ).toBe('low');
       expect((await docB.get(`/api/lab/orders/${orderId}`)).status).toBe(403);
 
+      // Same patient, now booked with doctor B: B sees only B's own records by default, and
+      // doctor A's reports only after asking for "previous reports" (audited as such).
+      await one(
+        `INSERT INTO appointments (patient_id, doctor_id, department_id, kind, visit_date, slot_start, slot_end)
+         VALUES ($1, $2, $3, 'scheduled', $4::date, ($4 || ' 23:30+05:30')::timestamptz, ($4 || ' 23:45+05:30')::timestamptz)
+         RETURNING id`,
+        [f.patient, f.docB.doctorId, f.dept, today],
+      );
+      const own = (await docB.get(`/api/patients/${f.patient}/chart`)).body.chart;
+      expect(own).toMatchObject({
+        scope: 'mine',
+        otherDoctorRecords: 3, // A's consultation, lab order and prescription
+        encounters: [],
+        labOrders: [],
+        prescriptions: [],
+        vitals: [],
+      });
+      expect(own.appointments).toHaveLength(1);
+      expect(own.appointments[0].doctor.id).toBe(f.docB.doctorId);
+      const everyone = (await docB.get(`/api/patients/${f.patient}/chart?scope=all`)).body.chart;
+      expect(everyone.scope).toBe('all');
+      expect(everyone.encounters[0].doctor.id).toBe(f.docA.doctorId);
+      expect(everyone.labOrders[0]).toMatchObject({
+        status: 'verified',
+        doctor: { id: f.docA.doctorId },
+      });
+      expect(everyone.prescriptions).toHaveLength(1);
+      expect((await docB.get(`/api/lab/orders/${orderId}`)).status).toBe(200);
+      const views = (await audit('patient.clinical.read'))
+        .filter((r) => r.patient_id === f.patient)
+        .map((r) => (r.changes as { view: string }).view);
+      expect(views).toEqual(
+        expect.arrayContaining(['chart', 'chart:all_doctors', 'lab_order:other_doctor']),
+      );
+      expect(
+        (await docA.get(`/api/patients/${f.patient}/chart`)).body.chart.otherDoctorRecords,
+      ).toBe(0);
+
       // Billing: consultation + lab + dispensing lines; gapless number; payments.
       const draft = (await fin.get(`/api/invoices/${invoiceId}`)).body.invoice;
       expect(draft.lines.map((l: { sourceType: string }) => l.sourceType).sort()).toEqual([

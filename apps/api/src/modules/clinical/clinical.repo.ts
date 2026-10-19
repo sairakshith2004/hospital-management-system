@@ -59,7 +59,7 @@ export async function findEncounter(db: Queryable, id: string): Promise<Encounte
        'startedAt', e.started_at, 'completedAt', e.completed_at, 'appointmentId', e.appointment_id,
        'patient', json_build_object('id', pt.id, 'mrn', pt.mrn, 'firstName', pt.first_name,
           'lastName', pt.last_name, 'dob', pt.dob, 'sex', pt.sex),
-       'doctor', json_build_object('id', d.id, 'fullName', de.full_name),
+       'doctor', json_build_object('id', d.id, 'fullName', de.full_name, 'departmentId', d.department_id),
        'notes', (SELECT coalesce(json_agg(json_build_object('id', n.id, 'kind', n.kind, 'body', n.body,
            'author', ne.full_name, 'createdAt', n.created_at) ORDER BY n.created_at), '[]')
          FROM clinical_notes n JOIN users nu ON nu.id = n.author_id JOIN employees ne ON ne.id = nu.employee_id
@@ -79,12 +79,26 @@ export async function findEncounter(db: Queryable, id: string): Promise<Encounte
   return rows[0]?.e;
 }
 
+/**
+ * The patient's chart. With `doctorId` (the default view) it holds only that doctor's own
+ * consultations, vitals, prescriptions, follow-ups, lab orders and appointments; with null,
+ * every doctor's. Allergies are always complete: hiding one could harm the patient.
+ */
 export async function findPatientChart(
   db: Queryable,
   patientId: string,
+  doctorId: string | null,
 ): Promise<PatientChart | undefined> {
+  // $2 is the doctor, or null for everyone. "MINE(col)" keeps rows of that doctor only.
+  const MINE = (col: string) => `($2::uuid IS NULL OR ${col} = $2::uuid)`;
   const { rows } = await db.query<{ c: PatientChart }>(
     `SELECT json_build_object(
+       'scope', CASE WHEN $2::uuid IS NULL THEN 'all' ELSE 'mine' END,
+       'otherDoctorRecords', CASE WHEN $2::uuid IS NULL THEN 0 ELSE
+           (SELECT count(*) FROM encounters e WHERE e.patient_id = pt.id AND e.doctor_id <> $2::uuid)
+         + (SELECT count(*) FROM lab_orders o JOIN encounters en ON en.id = o.encounter_id
+             WHERE o.patient_id = pt.id AND en.doctor_id <> $2::uuid)
+         + (SELECT count(*) FROM prescriptions p WHERE p.patient_id = pt.id AND p.doctor_id <> $2::uuid) END,
        'patient', json_build_object('id', pt.id, 'mrn', pt.mrn, 'firstName', pt.first_name, 'lastName', pt.last_name,
           'dob', pt.dob, 'sex', pt.sex, 'bloodGroup', pt.blood_group),
        'allergies', (SELECT coalesce(json_agg(json_build_object('id', a.id, 'substance', a.substance,
@@ -98,23 +112,27 @@ export async function findPatientChart(
            'diagnoses', ${DIAGNOSES('e.id')})
            ORDER BY e.started_at DESC), '[]')
          FROM encounters e JOIN doctor_profiles d ON d.id = e.doctor_id JOIN employees de ON de.id = d.employee_id
-         WHERE e.patient_id = pt.id),
-       'vitals', ${VITALS('v.patient_id = pt.id')},
+         WHERE e.patient_id = pt.id AND ${MINE('e.doctor_id')}),
+       'vitals', ${VITALS(`v.patient_id = pt.id AND ($2::uuid IS NULL OR EXISTS (SELECT 1 FROM appointments va WHERE va.id = v.appointment_id AND va.doctor_id = $2::uuid))`)},
        'prescriptions', (SELECT coalesce(json_agg(${PRESCRIPTION_JSON} ORDER BY p.issued_at DESC), '[]')
-         ${PRESCRIPTION_FROM} WHERE p.patient_id = $1),
-       'followUps', ${FOLLOW_UPS('f.patient_id = pt.id')},
+         ${PRESCRIPTION_FROM} WHERE p.patient_id = $1 AND ${MINE('p.doctor_id')}),
+       'followUps', ${FOLLOW_UPS(`f.patient_id = pt.id AND ($2::uuid IS NULL OR f.target_doctor_id = $2::uuid OR EXISTS (SELECT 1 FROM encounters fe2 WHERE fe2.id = f.source_encounter_id AND fe2.doctor_id = $2::uuid))`)},
        'labOrders', (SELECT coalesce(json_agg(json_build_object('id', o.id, 'orderNo', o.order_no, 'status', o.status,
            'test', json_build_object('id', t.id, 'code', t.code, 'name', t.name),
-           'orderedAt', o.created_at, 'verifiedAt', o.verified_at) ORDER BY o.created_at DESC), '[]')
-         FROM lab_orders o JOIN lab_tests t ON t.id = o.test_id WHERE o.patient_id = pt.id),
+           'orderedAt', o.created_at, 'verifiedAt', o.verified_at,
+           'doctor', json_build_object('id', od.id, 'fullName', ode.full_name)) ORDER BY o.created_at DESC), '[]')
+         FROM lab_orders o JOIN lab_tests t ON t.id = o.test_id
+         JOIN encounters oen ON oen.id = o.encounter_id
+         JOIN doctor_profiles od ON od.id = oen.doctor_id JOIN employees ode ON ode.id = od.employee_id
+         WHERE o.patient_id = pt.id AND ${MINE('oen.doctor_id')}),
        'appointments', (SELECT coalesce(json_agg(json_build_object('id', ap.id, 'appointmentNo', ap.appointment_no,
            'visitDate', ap.visit_date, 'slotStart', ap.slot_start, 'status', ap.status,
            'doctor', json_build_object('id', ad.id, 'fullName', ade.full_name)) ORDER BY ap.visit_date DESC, ap.slot_start DESC NULLS LAST), '[]')
          FROM appointments ap JOIN doctor_profiles ad ON ad.id = ap.doctor_id JOIN employees ade ON ade.id = ad.employee_id
-         WHERE ap.patient_id = pt.id)
+         WHERE ap.patient_id = pt.id AND ${MINE('ap.doctor_id')})
      ) AS c
      FROM patients pt WHERE pt.id = $1`,
-    [patientId],
+    [patientId, doctorId],
   );
   return rows[0]?.c;
 }

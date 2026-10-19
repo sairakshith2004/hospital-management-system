@@ -1,10 +1,12 @@
 @import 'tailwindcss';
 
 /*
- * HospitalOS palette: a calm medical blue ("brand") for primary actions and navigation,
- * Tailwind's teal as the care accent, and blue-grey slate for text and surfaces.
- * Light and dark themes follow the operating system (Tailwind's default dark: variant).
+ * HospitalOS palette: white surfaces with pastel accents (sky, mint teal, lavender, blush),
+ * a calm medical blue ("brand") for primary actions and text emphasis, and slate for text.
+ * The app always uses this light theme, whatever the operating system's setting: dark:
+ * classes apply only under an explicit .dark class, which the app never sets.
  */
+@custom-variant dark (&:where(.dark, .dark *));
 @theme {
   --color-brand-50: oklch(0.971 0.014 240);
   --color-brand-100: oklch(0.936 0.032 240);
@@ -21,6 +23,7 @@
 
 @layer base {
   html {
+    color-scheme: light;
     font-family:
       Inter,
       system-ui,
@@ -28,7 +31,7 @@
       'Segoe UI',
       Roboto,
       sans-serif;
-    @apply bg-slate-100/60 text-slate-900 antialiased dark:bg-slate-950 dark:text-slate-100;
+    @apply bg-slate-50 text-slate-800 antialiased;
   }
   :focus-visible {
     @apply outline-2 outline-offset-2 outline-brand-600;

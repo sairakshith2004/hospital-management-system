@@ -5,9 +5,12 @@
  * HR         GET  /api/hr/attendance?date=          attendance:manage | employee:read
  *            POST /api/hr/attendance                attendance:manage (upsert one employee-day)
  *            POST /api/hr/employees/:id/status      employee:manage
- *            GET  /api/hr/leave?scope=mine|all      leave:request (mine) | leave:approve (all)
- *            POST /api/hr/leave                     leave:request (for yourself)
- *            POST /api/hr/leave/:id/decide          leave:approve (not your own)
+ *            GET  /api/hr/leave?scope=mine|all&status=&employeeId=
+ *                                                   leave:request (mine) | leave:approve (all)
+ *            GET  /api/hr/leave/summary?year=       leave:approve (approved days per kind, per person)
+ *            POST /api/hr/leave                     leave:request (for yourself; no overlapping requests)
+ *            POST /api/hr/leave/:id/decide          leave:approve (not your own; rejecting needs a note;
+ *                                                   approving blocks a doctor's schedule for those days)
  *            POST /api/hr/leave/:id/cancel          the requester, while pending
  * Finance    GET/POST /api/finance/categories       expense:create | expense:approve | report:finance; POST expense:create
  *            GET  /api/finance/expenses             expense:create | expense:approve | report:finance
@@ -36,8 +39,11 @@ import {
   expenseCategorySchema,
   expenseDecisionSchema,
   expenseSchema,
+  HOSPITAL_TIME_ZONE,
   leaveDecisionSchema,
+  leaveListQuerySchema,
   leaveRequestSchema,
+  type LeaveSummaryRow,
   maintenanceLogSchema,
   referralSourceSchema,
 } from '@hospitalos/shared';
@@ -189,47 +195,129 @@ export function operationsRoutes(db: Database): Router {
     },
   );
 
+  // Leave. Anyone with leave:request asks for their own leave; only leave:approve (HR) sees
+  // everyone's requests, decides them and sees the per-person counts. Only an approved request
+  // has any effect: it marks the person on leave in attendance and, for a doctor, blocks those
+  // days in their schedule so no new appointments can be booked.
+  const LEAVE_COLUMNS = `l.id, l.kind, l.start_date::text AS "startDate", l.end_date::text AS "endDate",
+       (l.end_date - l.start_date + 1) AS days, l.reason, l.status, l.created_at AS "createdAt",
+       l.decided_at AS "decidedAt", de.full_name AS "decidedBy", l.decision_note AS "decisionNote",
+       json_build_object('id', e.id, 'fullName', e.full_name, 'employeeNo', e.employee_no, 'department', d.name) AS employee,
+       (l.created_by = $1) AS mine`;
+  const LEAVE_FROM = `FROM leave_requests l
+       JOIN employees e ON e.id = l.employee_id
+       JOIN departments d ON d.id = e.department_id
+       LEFT JOIN users du ON du.id = l.decided_by
+       LEFT JOIN employees de ON de.id = du.employee_id`;
+  /** Booked appointments of this employee (as a doctor) inside the leave dates. */
+  const BOOKED_IN_LEAVE = `(SELECT count(*)::int FROM appointments a
+         JOIN doctor_profiles dp ON dp.id = a.doctor_id AND dp.employee_id = l.employee_id
+        WHERE a.status = 'booked'
+          AND a.slot_start < (l.end_date + 1)::timestamp AT TIME ZONE '${HOSPITAL_TIME_ZONE}'
+          AND a.slot_end > l.start_date::timestamp AT TIME ZONE '${HOSPITAL_TIME_ZONE}')`;
+
   router.get(
     '/hr/leave',
     requireAnyPermission(db, ['leave:request', 'leave:approve']),
     async (req, res) => {
       const user = requireUser(res);
-      const { scope } = z
-        .object({ scope: z.enum(['mine', 'all']).default('mine') })
-        .parse(req.query);
-      if (scope === 'all' && !user.can('leave:approve'))
+      const q = leaveListQuerySchema.parse(req.query);
+      const all = q.scope === 'all';
+      if (all && !user.can('leave:approve'))
         throw new AppError(403, 'FORBIDDEN', 'You do not have permission to do this');
       const { rows } = await db.query(
-        `SELECT l.id, l.kind, l.start_date::text AS "startDate", l.end_date::text AS "endDate", l.reason, l.status,
-              l.decided_at AS "decidedAt", l.decision_note AS "decisionNote", l.created_at AS "createdAt",
-              json_build_object('id', e.id, 'fullName', e.full_name, 'employeeNo', e.employee_no) AS employee,
-              (l.created_by = $2) AS mine
-       FROM leave_requests l JOIN employees e ON e.id = l.employee_id
-       WHERE $1 = 'all' OR l.created_by = $2 ORDER BY l.created_at DESC LIMIT 200`,
-        [scope, user.id],
+        `SELECT ${LEAVE_COLUMNS}, ${all ? BOOKED_IN_LEAVE : '0'} AS "bookedAppointments"
+         ${LEAVE_FROM}
+         WHERE ($2 OR l.created_by = $1)
+           AND ($3::text IS NULL OR l.status = $3)
+           AND ($4::uuid IS NULL OR l.employee_id = $4)
+         ORDER BY l.created_at DESC LIMIT 500`,
+        [user.id, all, q.status ?? null, all ? (q.employeeId ?? null) : null],
       );
       res.json({ requests: rows });
     },
   );
+  router.get('/hr/leave/summary', requirePermission(db, 'leave:approve'), async (req, res) => {
+    const { year } = z
+      .object({ year: z.coerce.number().int().min(2000).max(2100) })
+      .parse(req.query);
+    // Days are counted inside the chosen year only, so leave across 31 Dec splits correctly.
+    const { rows } = await db.query<{
+      employeeId: string;
+      employeeNo: string;
+      fullName: string;
+      department: string;
+      casual: number;
+      sick: number;
+      earned: number;
+      other: number;
+      pendingRequests: number;
+      rejectedRequests: number;
+    }>(
+      `WITH y AS (SELECT make_date($1, 1, 1) AS first, make_date($1, 12, 31) AS last),
+       l AS (
+         SELECT l.employee_id, l.kind, l.status,
+                least(l.end_date, y.last) - greatest(l.start_date, y.first) + 1 AS days
+           FROM leave_requests l, y
+          WHERE l.start_date <= y.last AND l.end_date >= y.first)
+       SELECT e.id AS "employeeId", e.employee_no AS "employeeNo", e.full_name AS "fullName", d.name AS department,
+              coalesce(sum(l.days) FILTER (WHERE l.status = 'approved' AND l.kind = 'casual'), 0)::int AS casual,
+              coalesce(sum(l.days) FILTER (WHERE l.status = 'approved' AND l.kind = 'sick'), 0)::int AS sick,
+              coalesce(sum(l.days) FILTER (WHERE l.status = 'approved' AND l.kind = 'earned'), 0)::int AS earned,
+              coalesce(sum(l.days) FILTER (WHERE l.status = 'approved' AND l.kind = 'other'), 0)::int AS other,
+              count(*) FILTER (WHERE l.status = 'pending')::int AS "pendingRequests",
+              count(*) FILTER (WHERE l.status = 'rejected')::int AS "rejectedRequests"
+         FROM employees e
+         JOIN departments d ON d.id = e.department_id
+         LEFT JOIN l ON l.employee_id = e.id
+        WHERE e.employment_status <> 'exited' OR l.employee_id IS NOT NULL
+        GROUP BY e.id, d.name
+        ORDER BY d.name, e.full_name`,
+      [year],
+    );
+    const summary: LeaveSummaryRow[] = rows.map((r) => ({
+      employeeId: r.employeeId,
+      employeeNo: r.employeeNo,
+      fullName: r.fullName,
+      department: r.department,
+      approvedDays: { casual: r.casual, sick: r.sick, earned: r.earned, other: r.other },
+      totalApprovedDays: r.casual + r.sick + r.earned + r.other,
+      pendingRequests: r.pendingRequests,
+      rejectedRequests: r.rejectedRequests,
+    }));
+    res.json({ year, summary });
+  });
   router.post('/hr/leave', requirePermission(db, 'leave:request'), async (req, res) => {
     const input = leaveRequestSchema.parse(req.body);
     const id = await audited(
       db,
       req,
       res,
-      { action: 'leave.requested', entityType: 'leave_request' },
+      {
+        action: 'leave.requested',
+        entityType: 'leave_request',
+        changes: { kind: input.kind, from: input.startDate, to: input.endDate },
+      },
       async (tx, userId) => {
+        const employeeId = await myEmployeeId(tx, userId);
+        // One request at a time per person, so two overlapping requests can't both pass.
+        await tx.query('SELECT 1 FROM employees WHERE id = $1 FOR UPDATE', [employeeId]);
+        const clash = await tx.query<{ status: string }>(
+          `SELECT status FROM leave_requests
+            WHERE employee_id = $1 AND status IN ('pending', 'approved')
+              AND start_date <= $3 AND end_date >= $2 LIMIT 1`,
+          [employeeId, input.startDate, input.endDate],
+        );
+        if (clash.rows[0])
+          throw new AppError(
+            409,
+            'LEAVE_OVERLAP',
+            `You already have ${clash.rows[0].status === 'approved' ? 'approved' : 'a pending request for'} leave on some of these days.`,
+          );
         const { rows } = await tx.query<{ id: string }>(
           `INSERT INTO leave_requests (employee_id, kind, start_date, end_date, reason, created_by, updated_by)
          VALUES ($1, $2, $3, $4, $5, $6, $6) RETURNING id`,
-          [
-            await myEmployeeId(tx, userId),
-            input.kind,
-            input.startDate,
-            input.endDate,
-            input.reason,
-            userId,
-          ],
+          [employeeId, input.kind, input.startDate, input.endDate, input.reason, userId],
         );
         return { id: rows[0]!.id, result: rows[0]!.id };
       },
@@ -239,11 +327,15 @@ export function operationsRoutes(db: Database): Router {
   router.post('/hr/leave/:id/decide', requirePermission(db, 'leave:approve'), async (req, res) => {
     const id = uuid(req.params.id, 'Leave request');
     const { decision, note } = leaveDecisionSchema.parse(req.body);
-    await audited(
+    const result = await audited(
       db,
       req,
       res,
-      { action: `leave.${decision}`, entityType: 'leave_request' },
+      {
+        action: `leave.${decision}`,
+        entityType: 'leave_request',
+        ...(note ? { reason: note } : {}),
+      },
       async (tx, userId) => {
         const { rows } = await tx.query<{ status: string; createdBy: string }>(
           'SELECT status, created_by AS "createdBy" FROM leave_requests WHERE id = $1 FOR UPDATE',
@@ -262,10 +354,33 @@ export function operationsRoutes(db: Database): Router {
           'UPDATE leave_requests SET status = $2, decided_by = $3, decided_at = now(), decision_note = $4, updated_by = $3 WHERE id = $1',
           [id, decision, userId, note ?? null],
         );
-        return { id, result: null };
+        if (decision === 'rejected')
+          return { id, result: { blockedSchedule: false, bookedAppointments: 0 } };
+        // Approved: a doctor's whole leave days (hospital time) are blocked for booking.
+        const blocked = await tx.query(
+          `INSERT INTO schedule_exceptions (doctor_id, kind, starts_at, ends_at, reason, created_by, updated_by)
+           SELECT dp.id, 'leave',
+                  l.start_date::timestamp AT TIME ZONE '${HOSPITAL_TIME_ZONE}',
+                  (l.end_date + 1)::timestamp AT TIME ZONE '${HOSPITAL_TIME_ZONE}',
+                  'Approved leave (' || l.kind || ')', $2, $2
+             FROM leave_requests l JOIN doctor_profiles dp ON dp.employee_id = l.employee_id AND dp.active
+            WHERE l.id = $1`,
+          [id, userId],
+        );
+        const booked = await tx.query<{ n: number }>(
+          `SELECT ${BOOKED_IN_LEAVE} AS n FROM leave_requests l WHERE l.id = $1`,
+          [id],
+        );
+        return {
+          id,
+          result: {
+            blockedSchedule: (blocked.rowCount ?? 0) > 0,
+            bookedAppointments: booked.rows[0]!.n,
+          },
+        };
       },
     );
-    res.json({ ok: true });
+    res.json({ ok: true, ...result });
   });
   router.post('/hr/leave/:id/cancel', requirePermission(db, 'leave:request'), async (req, res) => {
     const id = uuid(req.params.id, 'Leave request');

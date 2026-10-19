@@ -18,6 +18,9 @@
     "db:seed:demo:schedules": "tsx --env-file=../../.env src/db/seed/run-demo-schedules.ts dev",
     "db:seed:demo:catalogue": "tsx --env-file=../../.env src/db/seed/run-demo-catalogue.ts dev",
     "db:seed:demo:formulary": "tsx --env-file=../../.env src/db/seed/run-demo-formulary.ts dev",
+    "db:seed:demo:lab-tests": "tsx --env-file=../../.env src/db/seed/run-demo-lab-tests.ts dev",
+    "db:seed:demo:specialists": "tsx --env-file=../../.env src/db/seed/run-demo-specialists.ts dev",
+    "db:reset-password": "tsx --env-file=../../.env src/db/seed/run-reset-password.ts",
     "db:bootstrap-admin": "tsx --env-file=../../.env src/db/seed/run-bootstrap-admin.ts",
     "test:db": "node --env-file=../../.env ../../node_modules/vitest/vitest.mjs run --config vitest.db.config.ts"
   },

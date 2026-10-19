@@ -95,6 +95,8 @@ export interface LabTestView {
   turnaroundHours: number;
   pricePaise: number;
   active: boolean;
+  /** The department the test belongs to; null for general tests every department uses. */
+  department: { id: string; name: string } | null;
   parameters: {
     id: string;
     name: string;
