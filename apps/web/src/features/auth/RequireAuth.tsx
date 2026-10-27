@@ -2,6 +2,7 @@ import { Navigate, Outlet, useLocation } from 'react-router';
 import { Alert } from '../../components/ui/alert';
 import { Button } from '../../components/ui/button';
 import { PageSpinner } from '../../components/ui/spinner';
+import { CommHub } from '../communication/CommHub';
 import { useAuth } from './auth-context';
 
 /** Guards every page except /login. UX only: the API enforces access on every request. */
@@ -27,5 +28,11 @@ export function RequireAuth() {
     const query = params.toString();
     return <Navigate to={`/login${query ? `?${query}` : ''}`} replace />;
   }
-  return <Outlet />;
+  // The communication hub's chat button floats over every signed-in page, portals included.
+  return (
+    <>
+      <Outlet />
+      <CommHub />
+    </>
+  );
 }

@@ -476,3 +476,104 @@ describe('prescribing', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   });
 });
+
+describe('lookup by patient number', () => {
+  const WHO = {
+    id: PATIENT.id,
+    mrn: PATIENT.mrn,
+    firstName: PATIENT.firstName,
+    lastName: PATIENT.lastName,
+    dob: PATIENT.dob,
+    sex: PATIENT.sex,
+  };
+  const rx = (id: string, status: string) => ({
+    id,
+    rxNo: `RX-${id}`,
+    status,
+    issuedAt: '2030-01-07T05:00:00.000Z',
+    notes: null,
+    encounterId: 'e1',
+    patient: WHO,
+    doctor: { id: DOCTOR.id, fullName: DOCTOR.fullName },
+    items: [],
+  });
+
+  it('shows pharmacy the patient’s prescriptions to dispense and past ones, from just the digits', async () => {
+    fakeApi({
+      'GET /api/auth/me': () => as('PHA'),
+      'GET /api/pharmacy/prescriptions?status=open': () => json(200, { prescriptions: [] }),
+      'GET /api/pharmacy/patients/MRN000042': () =>
+        json(200, {
+          patient: WHO,
+          allergies: [{ id: 'a1', substance: 'Zzpenicillin', reaction: null, severity: 'severe' }],
+          prescriptions: [rx('open1', 'issued'), rx('old1', 'dispensed')],
+        }),
+    });
+    renderApp('/pharmacy');
+    fireEvent.change(await screen.findByLabelText('Patient number'), { target: { value: '42' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Find' }));
+    expect(await screen.findByRole('heading', { name: 'Zz Patient' })).toBeTruthy();
+    expect(screen.getByText(/Zzpenicillin/)).toBeTruthy();
+    const toDo = screen.getByRole('table', { name: 'Prescriptions to dispense' });
+    expect(within(toDo).getByText('RX-open1')).toBeTruthy();
+    const past = screen.getByRole('table', { name: 'Previous prescriptions' });
+    expect(within(past).getByText('RX-old1')).toBeTruthy();
+  });
+
+  it('says so when the number is not a patient number, without calling the API', async () => {
+    const api = fakeApi({
+      'GET /api/auth/me': () => as('LAB'),
+      'GET /api/lab/orders': () => json(200, { orders: [] }),
+    });
+    renderApp('/lab');
+    fireEvent.change(await screen.findByLabelText('Patient number'), {
+      target: { value: 'abc' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Find' }));
+    expect(await screen.findByText(/for example MRN000123/)).toBeTruthy();
+    expect(api.calls.some((c) => c.key.includes('/api/lab/patients/'))).toBe(false);
+  });
+
+  it('shows an unknown patient number as not found', async () => {
+    fakeApi({
+      'GET /api/auth/me': () => as('FIN'),
+      'GET /api/billing/patients/MRN000999': () =>
+        apiError(404, 'NOT_FOUND', 'No patient has this patient number'),
+    });
+    renderApp('/billing?mrn=MRN000999');
+    expect(await screen.findByText('No patient has this patient number')).toBeTruthy();
+  });
+
+  it('splits billing into bills to be paid and past bills, with the amount due', async () => {
+    const inv = (id: string, status: string, total: number, paid: number) => ({
+      id,
+      invoiceNo: `INV-${id}`,
+      status,
+      patient: WHO,
+      appointmentId: null,
+      totalPaise: total,
+      paidPaise: paid,
+      balancePaise: total - paid,
+      createdAt: '2030-01-07T05:00:00.000Z',
+      issuedAt: '2030-01-07T05:00:00.000Z',
+    });
+    fakeApi({
+      'GET /api/auth/me': () => as('FIN'),
+      'GET /api/billing/patients/MRN000042': () =>
+        json(200, {
+          patient: WHO,
+          invoices: [
+            inv('due1', 'partially_paid', 50000, 20000),
+            inv('old1', 'paid', 30000, 30000),
+          ],
+        }),
+    });
+    renderApp('/billing?mrn=mrn42');
+    const due = await screen.findByRole('table', { name: 'Bills to be paid' });
+    expect(within(due).getByText('INV-due1')).toBeTruthy();
+    expect(
+      within(screen.getByRole('table', { name: 'Past bills' })).getByText('INV-old1'),
+    ).toBeTruthy();
+    expect(screen.getByText(/Due ₹\s?300/)).toBeTruthy();
+  });
+});

@@ -3,6 +3,7 @@
  *   POST /api/services, PATCH /:id           price:manage (new prices apply to new charges only)
  *   GET  /api/invoices?status=&patientId=&from=&to=   invoice:read
  *   GET  /api/invoices/:id                   invoice:read
+ *   GET  /api/billing/patients/:mrn          invoice:read (one patient's bills by patient number, audited)
  *   POST /api/invoices/:id/issue             invoice:issue (gapless number)
  *   POST /api/invoices/:id/lines             invoice:issue (manual services on drafts)
  *   POST /api/invoices/:id/payments          payment:record (idempotent; never above the balance)
@@ -23,6 +24,7 @@ import type { Database } from '../../db/client.js';
 import { auditContext } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import { requireAnyPermission, requirePermission, requireUser } from '../../middleware/auth.js';
+import { lookupPatientByMrn } from '../patients/lookup.js';
 import { findInvoice, listInvoices } from './billing.repo.js';
 import {
   addManualLine,
@@ -82,6 +84,11 @@ export function billingRoutes(db: Database): Router {
     const invoice = await findInvoice(db, uuid(req.params.id));
     if (!invoice) throw new AppError(404, 'NOT_FOUND', 'Invoice not found');
     res.json({ invoice });
+  });
+  router.get('/billing/patients/:mrn', canRead, async (req, res) => {
+    const patient = await lookupPatientByMrn(db, req, res, 'billing');
+    const invoices = await listInvoices(db, { patientId: patient.id });
+    res.json({ patient, invoices });
   });
   router.post('/invoices/:id/issue', requirePermission(db, 'invoice:issue'), async (req, res) => {
     const id = uuid(req.params.id);

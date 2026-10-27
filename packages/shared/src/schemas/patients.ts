@@ -106,3 +106,21 @@ export type PatientSummary = Pick<
 
 /** Returned with 409 DUPLICATE_SUSPECTED: just enough to recognise the existing record. */
 export type DuplicateCandidate = Pick<Patient, 'id' | 'mrn' | 'firstName' | 'lastName'>;
+
+/**
+ * A patient number as staff type it at a department counter: "MRN000123", "mrn 123" or
+ * just "123" all mean MRN000123. Anything else is not a patient number.
+ */
+export function normalizeMrn(input: string): string | null {
+  const s = input.replace(/\s+/g, '').toUpperCase();
+  const digits = /^(?:MRN)?(\d{1,9})$/.exec(s)?.[1];
+  if (!digits) return null;
+  const n = digits.replace(/^0+(?=\d)/, '');
+  return `MRN${n.padStart(6, '0')}`;
+}
+
+/** Who the patient is, for department lookups by patient number (no contact details). */
+export type PatientIdentity = Pick<
+  Patient,
+  'id' | 'mrn' | 'firstName' | 'lastName' | 'dob' | 'sex'
+>;

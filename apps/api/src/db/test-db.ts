@@ -10,6 +10,7 @@ import { createApp } from '../app.js';
 import { createLogger } from '../lib/logger.js';
 import { hashPassword } from '../lib/password.js';
 import { createSession } from '../middleware/session.js';
+import type { EventHub } from '../modules/communication/event-hub.js';
 import type { Database, Queryable, TxClient } from './client.js';
 import { appUrl, migrationUrl } from './db-env.js';
 
@@ -90,7 +91,11 @@ export const TEST_PASSWORD = 'Synthetic-Passw0rd-for-tests';
 /** The API wired to the test transaction: real sessions table, no pruning timer. */
 export function createTestApp(
   client: pg.Client,
-  options: { loginLimiter?: RequestHandler; signupLimiter?: RequestHandler } = {},
+  options: {
+    loginLimiter?: RequestHandler;
+    signupLimiter?: RequestHandler;
+    events?: EventHub;
+  } = {},
 ): { app: Express; db: Database } {
   const db = transactionalDb(client);
   const session = createSession({
@@ -105,6 +110,7 @@ export function createTestApp(
     session: session.middleware,
     loginLimiter: options.loginLimiter ?? ((_req, _res, next) => next()),
     signupLimiter: options.signupLimiter ?? ((_req, _res, next) => next()),
+    events: options.events,
   });
   return { app, db };
 }

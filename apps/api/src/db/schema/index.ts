@@ -9,3 +9,4 @@ export * from './inventory.js';
 export * from './clinical.js';
 export * from './billing.js';
 export * from './operations.js';
+export * from './communication.js';

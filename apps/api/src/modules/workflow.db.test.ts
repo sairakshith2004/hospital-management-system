@@ -479,6 +479,34 @@ describe('workflows A, B and C: visit → consultation → pharmacy, lab and bil
       expect((await audit('patient.clinical.read')).length).toBeGreaterThan(0);
       expect((await audit('access.denied')).some((r) => r.patient_id === f.patient)).toBe(true);
 
+      // Each department finds the patient by patient number and sees only its own records.
+      const { mrn } = (
+        await client.query<{ mrn: string }>('SELECT mrn FROM patients WHERE id = $1', [f.patient])
+      ).rows[0]!;
+      const short = mrn.replace(/^MRN0*/, ''); // staff may type just the digits
+      const phaLook = await pha.get(`/api/pharmacy/patients/${short}`);
+      expect(phaLook.status, JSON.stringify(phaLook.body)).toBe(200);
+      expect(phaLook.body.patient).toMatchObject({ id: f.patient, mrn });
+      expect(phaLook.body.patient.phone).toBeUndefined();
+      expect(phaLook.body.prescriptions.map((p: { id: string }) => p.id)).toEqual([rxId]);
+      expect(phaLook.body.allergies).toHaveLength(1);
+      const labLook = await lab1.get(`/api/lab/patients/${mrn.toLowerCase()}`);
+      expect(labLook.status, JSON.stringify(labLook.body)).toBe(200);
+      expect(labLook.body.orders).toMatchObject([{ id: orderId, status: 'ordered' }]);
+      const finLook = await fin.get(`/api/billing/patients/${mrn}`);
+      expect(finLook.status, JSON.stringify(finLook.body)).toBe(200);
+      expect(finLook.body.invoices.map((i: { id: string }) => i.id)).toEqual([invoiceId]);
+      expect((await lab1.get(`/api/pharmacy/patients/${mrn}`)).status).toBe(403);
+      expect((await pha.get(`/api/lab/patients/${mrn}`)).status).toBe(403);
+      expect((await lab1.get(`/api/billing/patients/${mrn}`)).status).toBe(403);
+      expect((await pha.get('/api/pharmacy/patients/MRN999999999')).status).toBe(404);
+      expect((await pha.get('/api/pharmacy/patients/not-a-number')).status).toBe(404);
+      expect(
+        (await audit('patient.lookup'))
+          .filter((r) => r.patient_id === f.patient)
+          .map((r) => r.changes.department),
+      ).toEqual(['pharmacy', 'lab', 'billing']);
+
       // B. Pharmacy: FEFO among batches that last the course (P-SHORT expires too soon).
       const queue = await pha.get('/api/pharmacy/prescriptions');
       const mine = queue.body.prescriptions.find((p: { id: string }) => p.id === rxId);
