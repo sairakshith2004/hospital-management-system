@@ -21,6 +21,22 @@ describe('loadEnv', () => {
     });
   });
 
+  it('accepts LiveKit settings only all together', () => {
+    const lk = {
+      LIVEKIT_URL: 'ws://127.0.0.1:7880',
+      LIVEKIT_API_KEY: 'zzkey',
+      LIVEKIT_API_SECRET: 'b'.repeat(40),
+    };
+    expect(loadEnv({ ...valid, ...lk }).LIVEKIT_URL).toBe(lk.LIVEKIT_URL);
+    expect(() => loadEnv({ ...valid, LIVEKIT_URL: lk.LIVEKIT_URL })).toThrow('LIVEKIT_URL');
+    expect(() => loadEnv({ ...valid, ...lk, LIVEKIT_API_SECRET: 'short' })).toThrow(
+      'LIVEKIT_API_SECRET',
+    );
+    expect(() => loadEnv({ ...valid, ...lk, LIVEKIT_URL: 'http://127.0.0.1:7880' })).toThrow(
+      'LIVEKIT_URL',
+    );
+  });
+
   it('accepts an explicit log level', () => {
     expect(loadEnv({ ...valid, LOG_LEVEL: 'debug' }).LOG_LEVEL).toBe('debug');
   });

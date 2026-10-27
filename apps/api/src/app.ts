@@ -16,6 +16,7 @@ import { clinicalRoutes } from './modules/clinical/clinical.routes.js';
 import { communicationRoutes } from './modules/communication/communication.routes.js';
 import { EventHub } from './modules/communication/event-hub.js';
 import { meetingRoutes } from './modules/communication/meetings.routes.js';
+import type { Sfu } from './modules/communication/sfu.js';
 import { departmentRoutes, doctorRoutes } from './modules/directory/directory.routes.js';
 import { inventoryRoutes } from './modules/inventory/inventory.routes.js';
 import { operationsRoutes } from './modules/operations/operations.routes.js';
@@ -39,8 +40,6 @@ export interface AppOptions {
   db?: Database;
   session?: RequestHandler;
   loginLimiter?: RequestHandler;
-  /** Self sign-up: 5 new accounts per IP per hour by default. */
-  signupLimiter?: RequestHandler;
   production?: boolean;
   /** Account lockout after repeated wrong passwords; on by default. */
   lockout?: boolean;
@@ -48,6 +47,8 @@ export interface AppOptions {
   trustProxy?: false | number;
   /** Live-update channel for the communication hub; a fresh one by default. */
   events?: EventHub;
+  /** LiveKit media server for video meetings; browser-to-browser video without it. */
+  sfu?: Sfu;
 }
 
 /**
@@ -60,11 +61,11 @@ export function createApp({
   db,
   session,
   loginLimiter = createLoginLimiter(),
-  signupLimiter = createLoginLimiter({ limit: 5, windowMs: 60 * 60 * 1000, countSuccesses: true }),
   production = false,
   lockout = true,
   trustProxy = false,
   events = new EventHub(),
+  sfu,
 }: AppOptions = {}): Express {
   const app = express();
   app.disable('x-powered-by');
@@ -90,7 +91,7 @@ export function createApp({
     app.use(session);
     app.use(loadUser(db));
     app.use(csrfProtection);
-    api.use('/auth', authRoutes({ db, loginLimiter, signupLimiter, production, lockout }));
+    api.use('/auth', authRoutes({ db, loginLimiter, production, lockout }));
     api.use('/departments', departmentRoutes(db));
     api.use('/doctors', doctorRoutes(db));
     api.use('/doctors', schedulingDoctorRoutes(db));
@@ -106,7 +107,7 @@ export function createApp({
     api.use(operationsRoutes(db));
     api.use(reportRoutes(db));
     api.use(communicationRoutes(db, events));
-    api.use(meetingRoutes(db, events));
+    api.use(meetingRoutes(db, events, sfu));
   }
   app.use('/api', api);
 

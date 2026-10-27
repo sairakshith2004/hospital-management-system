@@ -62,12 +62,25 @@ const audit = async (action: string) =>
 
 describe('staff accounts and roles', () => {
   it(
-    'creates an account without roles, grants a role, and protects SA accounts and oneself',
+    'HR creates an account without roles, SA grants a role, and SA accounts and oneself are protected',
     tx(async () => {
       const f = await setup();
       const adm = await f.as(['ADM']);
       const sa = await f.as(['SA']);
-      const created = await adm.post('/api/admin/staff', {
+      const hr = await f.as(['HR']);
+      const newStaff = {
+        fullName: 'Zz Not Allowed',
+        employeeNo: 'ZZ-NEW-0',
+        departmentId: f.dept,
+        designation: 'Receptionist',
+        username: 'zz_new_x',
+        password: PASSWORD,
+        reason: 'Zz onboarding',
+      };
+      // Only HR (and SA) create staff accounts: not administrators, not anyone else.
+      for (const who of [adm, await f.as(['REC']), await f.as(['DOC'])])
+        expect((await who.post('/api/admin/staff', newStaff)).status).toBe(403);
+      const created = await hr.post('/api/admin/staff', {
         fullName: 'Zz New Receptionist',
         employeeNo: 'ZZ-NEW-1',
         departmentId: f.dept,
@@ -224,7 +237,8 @@ describe('staff accounts and roles', () => {
     tx(async () => {
       const f = await setup();
       const adm = await f.as(['ADM']);
-      const emp = await adm.post('/api/admin/staff', {
+      const hr = await f.as(['HR']);
+      const emp = await hr.post('/api/admin/staff', {
         fullName: 'Dr. Zz Admin',
         employeeNo: 'ZZ-DOC-ADM',
         departmentId: f.dept,

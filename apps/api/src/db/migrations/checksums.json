@@ -20,5 +20,7 @@
   "0018_communication.sql": "e5627a08cc2f0003a21e96559bfe53f0b0d0ea75fb756e148f6826301ae7343d",
   "0019_communication_rules.sql": "113fdec4e0982281adec053944e010ea3a2915a8d4c8c293c2a7b8c81c552ab7",
   "0020_meetings.sql": "66e614b23ca2e7369242c3e9a9e6edeb70ade6ba3eb14cc2d2502cbe8fa7b068",
-  "0021_meetings_rules.sql": "5fe3c26a68e4fc6280950f020870363d0916d9f02abd90b9064eabf20b1e2d40"
+  "0021_meetings_rules.sql": "5fe3c26a68e4fc6280950f020870363d0916d9f02abd90b9064eabf20b1e2d40",
+  "0022_meeting_schedule.sql": "6169bee6d70c328a302d82a920ab37fe7c5f776cf2a137612af46ceca8eead63",
+  "0023_meeting_schedule_rules.sql": "0377f42d1fcc4600568eae7fab746e48587fa82fa3ea03b93aebc01ee8c7c066"
 }

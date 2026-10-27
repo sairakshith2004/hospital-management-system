@@ -11,6 +11,7 @@ import { createLogger } from '../lib/logger.js';
 import { hashPassword } from '../lib/password.js';
 import { createSession } from '../middleware/session.js';
 import type { EventHub } from '../modules/communication/event-hub.js';
+import type { Sfu } from '../modules/communication/sfu.js';
 import type { Database, Queryable, TxClient } from './client.js';
 import { appUrl, migrationUrl } from './db-env.js';
 
@@ -93,8 +94,8 @@ export function createTestApp(
   client: pg.Client,
   options: {
     loginLimiter?: RequestHandler;
-    signupLimiter?: RequestHandler;
     events?: EventHub;
+    sfu?: Sfu;
   } = {},
 ): { app: Express; db: Database } {
   const db = transactionalDb(client);
@@ -109,8 +110,8 @@ export function createTestApp(
     db,
     session: session.middleware,
     loginLimiter: options.loginLimiter ?? ((_req, _res, next) => next()),
-    signupLimiter: options.signupLimiter ?? ((_req, _res, next) => next()),
     events: options.events,
+    ...(options.sfu && { sfu: options.sfu }),
   });
   return { app, db };
 }

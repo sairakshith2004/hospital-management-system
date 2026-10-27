@@ -17,5 +17,22 @@ services:
       interval: 5s
       timeout: 3s
       retries: 10
+  # Media server for video meetings (optional; see README "Video meetings"). Reachable from
+  # this machine only by default; set LIVEKIT_BIND and LIVEKIT_NODE_IP to your LAN address to
+  # call from other computers on the same network.
+  livekit:
+    image: livekit/livekit-server:v1.13.9@sha256:d0c04791bf63ca8dcea123571827d56ba9504bd57c8d5de60ee03b5408cc3154
+    restart: unless-stopped
+    command: ['--config', '/etc/livekit.yaml', '--node-ip', '${LIVEKIT_NODE_IP:-127.0.0.1}']
+    ports:
+      - '${LIVEKIT_BIND:-127.0.0.1}:7880:7880'
+      - '${LIVEKIT_BIND:-127.0.0.1}:7881:7881'
+      - '${LIVEKIT_BIND:-127.0.0.1}:7882:7882/udp'
+    environment:
+      # Empty unless .env sets both; the server then refuses to start, which video:up reports.
+      LIVEKIT_KEYS: '${LIVEKIT_API_KEY:-}: ${LIVEKIT_API_SECRET:-}'
+    volumes:
+      - ./docker/livekit/livekit.yaml:/etc/livekit.yaml:ro
+    profiles: ['video']
 volumes:
   hms_pgdata:

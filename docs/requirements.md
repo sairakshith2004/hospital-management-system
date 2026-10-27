@@ -106,7 +106,7 @@ The project has exactly 11 roles (listed in [`permissions.md`](permissions.md) s
   - View aggregate conversion reports.
 - **Hospital administrator (ADM)**
   - Manage departments, schedules, fees and the allowlisted operational settings (C3).
-  - Create, deactivate and reset passwords for staff accounts (not Super Admin accounts). Can't assign roles or change role permissions (C2); a new account waits for Super Admin to assign its role.
+  - Deactivate, re-enable and reset passwords for staff accounts (not Super Admin accounts); new accounts are created by HR (2026-10-27). Can't assign roles or change role permissions (C2); a new account waits for Super Admin to assign its role.
   - Manage nurse session assignments.
   - Approve purchase orders, expenses, discounts and refunds.
   - Review emergency access.
@@ -313,7 +313,7 @@ All expiry checks are enforced by the API, and the tests call the API directly w
 
 ### Administration (AD)
 - **AD-1:** SA can list users, create and deactivate accounts, grant and revoke users' roles (`user_role:assign`), and change the permissions of roles SA doesn't hold (`role:manage`).
-- **AD-2:** ADM can create, deactivate and reset passwords for non-SA staff accounts (`user:manage`). ADM gets 403 when managing an SA account, changing their own account status, granting or revoking any role, or changing a role's permissions.
+- **AD-2:** ADM can deactivate, re-enable and reset passwords for non-SA staff accounts (`user:manage`). Since 2026-10-27 only HR (and SA) create staff accounts (`user:create`); ADM gets 403 when creating a staff account, managing an SA account, changing their own account status, granting or revoking any role, or changing a role's permissions.
 - **AD-3:** Every user, including SA, gets 403 when changing their own role assignments or the permissions of a role they hold. Disabling, or removing the SA role from, the last active SA returns 409.
 - **AD-4:** Account, role and role-permission changes need a reason (422 without one). Each writes an audit row in the same transaction naming the actor, target user or role, action, reason, and the role or permission code.
 - **AD-5:** SA and ADM can read the audit log; every other role gets 403. No API route updates or deletes audit rows, no permission allows it, and the application's database role can't do either. A direct UPDATE or DELETE on `audit_logs` is blocked by the trigger.

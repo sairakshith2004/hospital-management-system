@@ -10,7 +10,11 @@ import type { RoleCode } from './index.js';
 export const PERMISSIONS = [
   {
     code: 'user:manage',
-    description: 'Create, deactivate and reset passwords of staff accounts (no role changes)',
+    description: 'Deactivate, re-enable and reset passwords of staff accounts (no role changes)',
+  },
+  {
+    code: 'user:create',
+    description: 'Add new staff members and create their logins (no roles; HR onboarding)',
   },
   { code: 'user_role:assign', description: "Grant or revoke a user's roles" },
   { code: 'role:manage', description: 'Manage role definitions and role-permission assignments' },
@@ -335,6 +339,7 @@ export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
     'message:send',
   ],
   HR: [
+    'user:create',
     'employee:read',
     'employee:manage',
     'attendance:manage',

@@ -1,7 +1,7 @@
 /**
  *   GET  /api/admin/staff                         user:manage | user_role:assign | employee:read
- *   POST /api/admin/staff                         user:manage   (employee, optional login; no roles yet)
- *   POST /api/admin/staff/:employeeId/login       user:manage
+ *   POST /api/admin/staff                         user:create   (HR: employee, optional login; no roles yet)
+ *   POST /api/admin/staff/:employeeId/login       user:create
  *   POST /api/admin/users/:id/status              user:manage   (not self; ADM never on SA)
  *   POST /api/admin/users/:id/password            user:manage   (ends the user's sessions)
  *   POST /api/admin/users/:id/roles/grant|revoke  user_role:assign (not self; last SA kept)
@@ -89,7 +89,7 @@ export function adminRoutes(db: Database): Router {
       res.json({ staff: rows });
     },
   );
-  router.post('/admin/staff', requirePermission(db, 'user:manage'), async (req, res) => {
+  router.post('/admin/staff', requirePermission(db, 'user:create'), async (req, res) => {
     const input = createStaffSchema.parse(req.body);
     res
       .status(201)
@@ -97,7 +97,7 @@ export function adminRoutes(db: Database): Router {
   });
   router.post(
     '/admin/staff/:employeeId/login',
-    requirePermission(db, 'user:manage'),
+    requirePermission(db, 'user:create'),
     async (req, res) => {
       const input = z
         .strictObject({

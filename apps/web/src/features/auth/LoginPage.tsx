@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
+import { Navigate, useNavigate, useSearchParams } from 'react-router';
 import { Alert } from '../../components/ui/alert';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
@@ -27,8 +27,8 @@ function messageFor(err: unknown): string {
 
 /**
  * The main sign-in page in front of the whole app: one username and password form for every
- * department. After signing in, the portal cards page (PortalsPage) opens. New staff use
- * "Create an account" (SignupPage).
+ * department. After signing in, the portal cards page (PortalsPage) opens. There is no
+ * self sign-up: HR creates new staff members' accounts.
  */
 export function LoginPage() {
   const { status, login } = useAuth();
@@ -138,13 +138,8 @@ export function LoginPage() {
         </form>
       </Card>
       <p className="text-center text-sm text-slate-600 dark:text-slate-400">
-        New to the hospital?{' '}
-        <Link
-          to="/signup"
-          className="font-semibold text-brand-700 hover:underline dark:text-brand-300"
-        >
-          Create an account
-        </Link>
+        New to the hospital? Your account is created by the <strong>HR department</strong>. Ask HR
+        for your username and first password.
       </p>
       <p className="text-center text-xs text-slate-500 dark:text-slate-400">
         After signing in you choose your department portal.

@@ -91,8 +91,12 @@ export interface Meeting {
   id: string;
   title: string;
   kind: 'standard' | 'emergency';
-  status: 'active' | 'ended';
+  status: 'scheduled' | 'active' | 'ended';
   createdAt: string;
+  /** Set for a meeting booked ahead. */
+  scheduledFor: string | null;
+  /** A booked meeting whose join window has opened (from 10 minutes before its time). */
+  canJoin: boolean;
   endedAt: string | null;
   conversationId: string;
   hostId: string;

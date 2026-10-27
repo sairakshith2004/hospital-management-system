@@ -2,12 +2,11 @@
  *   POST /api/auth/login   JSON { username, password } → 200 { user, csrfToken } | 401
  *   GET  /api/auth/me      → 200 { user, csrfToken } | 401
  *   POST /api/auth/logout  X-CSRF-Token required → 204 | 401 | 403
- *   GET  /api/auth/signup/departments → 200 { departments: [{ id, name }] } (public)
- *   POST /api/auth/signup  JSON { fullName, username, departmentId, designation, password }
- *                          → 201 { status: "pending" } | 409 USERNAME_TAKEN | 422 | 429
- *   A pending account that signs in with the right password gets 403 ACCOUNT_PENDING.
+ *   There is no public sign-up: HR creates staff accounts (user:create, 2026-10-27).
+ *   An account left pending by the old sign-up that signs in with the right password gets
+ *   403 ACCOUNT_PENDING until an administrator approves or rejects it.
  */
-import { signupSchema, type AuthResponse } from '@hospitalos/shared';
+import type { AuthResponse } from '@hospitalos/shared';
 import { Router, type RequestHandler, type Response } from 'express';
 import type { Database } from '../../db/client.js';
 import { auditContext, recordAudit } from '../../lib/audit.js';
@@ -24,12 +23,10 @@ import {
 import { findSessionUser } from './auth.repo.js';
 import { LoginBody } from './auth.schemas.js';
 import { authenticate } from './auth.service.js';
-import { signUp, signupDepartments } from './signup.service.js';
 
 export interface AuthRoutesOptions {
   db: Database;
   loginLimiter: RequestHandler;
-  signupLimiter: RequestHandler;
   production: boolean;
   /** Account lockout after repeated wrong passwords (on unless turned off for development). */
   lockout?: boolean;
@@ -66,7 +63,6 @@ function toBody(
 export function authRoutes({
   db,
   loginLimiter,
-  signupLimiter,
   production,
   lockout = true,
 }: AuthRoutesOptions): Router {
@@ -105,16 +101,6 @@ export function authRoutes({
       context,
     );
     res.json(toBody(user, csrfToken));
-  });
-
-  router.get('/signup/departments', async (_req, res) => {
-    res.json({ departments: await signupDepartments(db) });
-  });
-
-  router.post('/signup', signupLimiter, requireJson, async (req, res) => {
-    const input = signupSchema.parse(req.body);
-    await signUp(db, input, auditContext(req, res));
-    res.status(201).json({ status: 'pending' });
   });
 
   router.get('/me', requireAuth, (req, res) => {

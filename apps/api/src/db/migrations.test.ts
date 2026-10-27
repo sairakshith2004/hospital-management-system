@@ -28,9 +28,27 @@ const FORBIDDEN: [string, RegExp][] = [
   ['session_replication_role', /\bsession_replication_role\b/i],
 ];
 
+/**
+ * The one allowed DROP: replacing a CHECK constraint to widen it (for example a new status
+ * value), which needs DROP CONSTRAINT then ADD CONSTRAINT with the same name on the same
+ * table, in the same file (owner decision 2026-10-27). A drop that isn't re-added still fails.
+ */
+function withoutReplacedConstraints(code: string): string {
+  return code.replace(
+    /ALTER\s+TABLE\s+("?\w+"?)\s+DROP\s+CONSTRAINT\s+("?\w+"?)\s*;/gi,
+    (stmt, table: string, name: string) => {
+      const readded = new RegExp(
+        `ALTER\\s+TABLE\\s+${table.replace(/"/g, '"?')}\\s+ADD\\s+CONSTRAINT\\s+${name.replace(/"/g, '"?')}\\s+CHECK\\b`,
+        'i',
+      );
+      return readded.test(code) ? '' : stmt;
+    },
+  );
+}
+
 /** The labels of every forbidden operation in `sql`, ignoring -- comments. */
 function violations(sql: string): string[] {
-  const code = sql.replace(/--.*$/gm, '');
+  const code = withoutReplacedConstraints(sql.replace(/--.*$/gm, ''));
   return FORBIDDEN.filter(([, pattern]) => pattern.test(code)).map(([label]) => label);
 }
 
@@ -70,8 +88,26 @@ describe('migration guard', () => {
     ['DISABLE TRIGGER', 'ALTER TABLE audit_logs DISABLE TRIGGER ALL;'],
     ['session_replication_role', "SET session_replication_role = 'replica';"],
     ['session_replication_role', "SELECT set_config('session_replication_role', 'replica', true);"],
+    ['DROP', 'ALTER TABLE "meetings" DROP CONSTRAINT "meetings_status_check";'],
+    [
+      'DROP',
+      'ALTER TABLE "a" DROP CONSTRAINT "x_check"; ALTER TABLE "b" ADD CONSTRAINT "x_check" CHECK (true);',
+    ],
+    [
+      'DROP',
+      'ALTER TABLE "a" DROP CONSTRAINT "x_fk"; ALTER TABLE "a" ADD CONSTRAINT "x_fk" FOREIGN KEY ("b") REFERENCES "c"("id");',
+    ],
   ])('rejects %s: %s', (label, sql) => {
     expect(violations(sql)).toContain(label);
+  });
+
+  it('allows widening a CHECK constraint by replacing it under the same name', () => {
+    expect(
+      violations(
+        `ALTER TABLE "meetings" DROP CONSTRAINT "meetings_status_check";
+         ALTER TABLE "meetings" ADD CONSTRAINT "meetings_status_check" CHECK ("meetings"."status" IN ('a', 'b'));`,
+      ),
+    ).toEqual([]);
   });
 
   it('allows the trigger definitions used by migration 0001', () => {

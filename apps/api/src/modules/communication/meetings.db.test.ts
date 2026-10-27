@@ -14,6 +14,7 @@ import {
   signIn,
 } from '../../db/test-db.js';
 import { EventHub } from './event-hub.js';
+import type { Sfu } from './sfu.js';
 
 let client!: pg.Client;
 beforeAll(async () => {
@@ -24,9 +25,9 @@ afterAll(async () => {
 });
 const tx = (work: () => Promise<void>) => () => inRollback(client, work);
 
-async function setup() {
+async function setup(sfu?: Sfu) {
   const events = new EventHub();
-  const { app, db } = createTestApp(client, { events });
+  const { app, db } = createTestApp(client, { events, ...(sfu && { sfu }) });
   const as = async (roles: string[]) => {
     const u = await createTestUser(db, { roles });
     const s = await signIn(app, u.username);
@@ -85,6 +86,13 @@ describe('video meetings', () => {
       });
       expect((await pharmacist.get(`/api/comm/meetings/${id}`)).status).toBe(404);
       expect((await pharmacist.post(`/api/comm/meetings/${id}/join`)).status).toBe(404);
+      // Only the people invited are alerted: no live event, no ringing count, not listed.
+      expect(hr.received.some((c) => c.includes('event: meeting'))).toBe(true);
+      expect(pharmacist.received.some((c) => c.includes('event: meeting'))).toBe(false);
+      expect((await pharmacist.get('/api/comm/summary')).body.meetingInvites).toBe(0);
+      expect(
+        (await pharmacist.get('/api/comm/meetings')).body.meetings.map((m: { id: string }) => m.id),
+      ).not.toContain(id);
 
       // The first person in has no peers; the next one is told who to connect to.
       expect((await adm.post(`/api/comm/meetings/${id}/join`)).body.peers).toEqual([]);
@@ -214,6 +222,158 @@ describe('video meetings', () => {
       );
       const list = (await host.get('/api/comm/meetings')).body.meetings;
       expect(list.find((m: { id: string }) => m.id === id).status).toBe('ended');
+    }),
+  );
+
+  it(
+    'books a conference for staff heads and doctors, opens it shortly before, and lets only the host cancel',
+    tx(async () => {
+      const f = await setup();
+      const sa = await f.as(['SA']);
+      const doc = await f.as(['DOC']);
+      const hr = await f.as(['HR']);
+      const at = (minutes: number) => new Date(Date.now() + minutes * 60_000).toISOString();
+
+      // Booked ahead: everyone invited sees it as upcoming, nobody is rung yet.
+      const later = await sa.post('/api/comm/meetings', {
+        title: 'Zz monthly heads and doctors conference',
+        inviteRoles: ['ADM', 'HR', 'SA', 'DOC'],
+        scheduledFor: at(120),
+      });
+      expect(later.status, JSON.stringify(later.body)).toBe(201);
+      const laterId = later.body.id as string;
+      expect((await audit('meeting.scheduled'))[0].changes).toMatchObject({ kind: 'standard' });
+      const seen = (await doc.get('/api/comm/meetings')).body.meetings.find(
+        (m: { id: string }) => m.id === laterId,
+      );
+      expect(seen).toMatchObject({ status: 'scheduled', canJoin: false });
+      expect(seen.scheduledFor).toBeTruthy();
+      expect((await doc.get('/api/comm/summary')).body.meetingInvites).toBe(0);
+      const early = await doc.post(`/api/comm/meetings/${laterId}/join`);
+      expect(early.status).toBe(409);
+      expect(early.body.error.code).toBe('MEETING_NOT_STARTED');
+
+      // Only the host cancels.
+      expect((await hr.post(`/api/comm/meetings/${laterId}/end`)).status).toBe(403);
+      expect((await sa.post(`/api/comm/meetings/${laterId}/end`)).status).toBe(200);
+      expect((await audit('meeting.cancelled')).map((r) => r.entity_id)).toEqual([laterId]);
+      expect((await doc.post(`/api/comm/meetings/${laterId}/join`)).body.error.code).toBe(
+        'MEETING_ENDED',
+      );
+
+      // Within the join window, the first person in starts it and the others are rung.
+      const soon = await sa.post('/api/comm/meetings', {
+        title: 'Zz starting soon',
+        inviteRoles: ['DOC'],
+        scheduledFor: at(5),
+      });
+      expect(soon.status, JSON.stringify(soon.body)).toBe(201);
+      const soonId = soon.body.id as string;
+      expect((await doc.get(`/api/comm/meetings/${soonId}`)).body.canJoin).toBe(true);
+      expect((await doc.post(`/api/comm/meetings/${soonId}/join`)).status).toBe(200);
+      expect((await doc.get(`/api/comm/meetings/${soonId}`)).body.status).toBe('active');
+      expect((await sa.get('/api/comm/summary')).body.meetingInvites).toBeGreaterThan(0);
+
+      // Bad times are refused.
+      const past = await sa.post('/api/comm/meetings', {
+        title: 'Zz past',
+        inviteRoles: ['DOC'],
+        scheduledFor: at(-5),
+      });
+      expect(past.body.error.code).toBe('SCHEDULE_IN_PAST');
+      const far = await sa.post('/api/comm/meetings', {
+        title: 'Zz far',
+        inviteRoles: ['DOC'],
+        scheduledFor: at(60 * 24 * 100),
+      });
+      expect(far.body.error.code).toBe('SCHEDULE_TOO_FAR');
+      expect(
+        (
+          await sa.post('/api/comm/meetings', {
+            title: 'Zz',
+            kind: 'emergency',
+            inviteRoles: ['DOC'],
+            scheduledFor: at(30),
+          })
+        ).status,
+      ).toBe(422);
+    }),
+  );
+
+  it(
+    'closes a booked meeting nobody started, and the database keeps meetings moving forward only',
+    tx(async () => {
+      const f = await setup();
+      const sa = await f.as(['SA']);
+      const doc = await f.as(['DOC']);
+      const conv = (
+        await client.query<{ id: string }>(
+          `INSERT INTO conversations (kind, title, created_by) VALUES ('group', 'Zz', $1) RETURNING id`,
+          [sa.id],
+        )
+      ).rows[0]!.id;
+      const missed = (
+        await client.query<{ id: string }>(
+          `INSERT INTO meetings (title, host_id, conversation_id, status, scheduled_for)
+           VALUES ('Zz missed', $1, $2, 'scheduled', now() - interval '3 hours') RETURNING id`,
+          [sa.id, conv],
+        )
+      ).rows[0]!.id;
+      await client.query(
+        'INSERT INTO meeting_participants (meeting_id, user_id) VALUES ($1, $2), ($1, $3)',
+        [missed, sa.id, doc.id],
+      );
+      const list = (await doc.get('/api/comm/meetings')).body.meetings;
+      expect(list.find((m: { id: string }) => m.id === missed).status).toBe('ended');
+
+      await expectSqlError(
+        client,
+        `UPDATE meetings SET status = 'scheduled' WHERE id = '${missed}'`,
+        '23514',
+      );
+      await expectSqlError(
+        client,
+        `INSERT INTO meetings (title, host_id, conversation_id, status) VALUES ('Zz', '${sa.id}', '${conv}', 'scheduled')`,
+        '23514',
+      );
+    }),
+  );
+
+  it(
+    'with the media server, gives a pass only after the join checks and closes the room when the host ends',
+    tx(async () => {
+      const passes: [string, string, string][] = [];
+      const closed: string[] = [];
+      const sfu: Sfu = {
+        url: 'ws://127.0.0.1:7880',
+        token: async (room, identity, name) => {
+          passes.push([room, identity, name]);
+          return `pass-${identity}`;
+        },
+        closeRoom: async (room) => {
+          closed.push(room);
+        },
+      };
+      const f = await setup(sfu);
+      const sa = await f.as(['SA']);
+      const doc = await f.as(['DOC']);
+      const outsider = await f.as(['DOC']);
+      const created = await sa.post('/api/comm/meetings', {
+        title: 'Zz conference',
+        inviteeIds: [doc.id],
+      });
+      const id = created.body.id as string;
+      expect((await doc.get('/api/comm/meetings')).body.maxInCall).toBe(50);
+
+      expect((await outsider.post(`/api/comm/meetings/${id}/join`)).status).toBe(404);
+      expect(passes).toHaveLength(0);
+      const joined = await doc.post(`/api/comm/meetings/${id}/join`);
+      expect(joined.status, JSON.stringify(joined.body)).toBe(200);
+      expect(joined.body.sfu).toEqual({ url: sfu.url, token: `pass-${doc.id}` });
+      expect(passes).toEqual([[id, doc.id, expect.any(String)]]);
+
+      expect((await sa.post(`/api/comm/meetings/${id}/end`)).status).toBe(200);
+      expect(closed).toEqual([id]);
     }),
   );
 });

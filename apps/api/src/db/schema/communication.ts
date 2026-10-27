@@ -216,11 +216,16 @@ export const meetings = pgTable(
       .notNull()
       .references(() => conversations.id, { onDelete: 'restrict' }),
     createdAt: createdAt(),
+    /** Set for a meeting booked ahead (status `scheduled` until someone joins). */
+    scheduledFor: timestamp('scheduled_for', { withTimezone: true }),
     endedAt: timestamp('ended_at', { withTimezone: true }),
     endedBy: uuid('ended_by').references(() => users.id, { onDelete: 'restrict' }),
   },
   (t) => [
     index('meetings_created_at_idx').on(t.createdAt),
+    index('meetings_scheduled_for_idx')
+      .on(t.scheduledFor)
+      .where(sql`${t.status} = 'scheduled'`),
     // One live meeting per conversation: a second "video call" joins the first.
     uniqueIndex('meetings_one_active_per_conversation')
       .on(t.conversationId)
@@ -229,6 +234,10 @@ export const meetings = pgTable(
     check('meetings_status_check', oneOf(t.status, MEETING_STATUSES)),
     check('meetings_title_length', sql`length(trim(${t.title})) BETWEEN 1 AND 120`),
     check('meetings_ended_fields', sql`(${t.status} = 'ended') = (${t.endedAt} IS NOT NULL)`),
+    check(
+      'meetings_scheduled_fields',
+      sql`${t.status} <> 'scheduled' OR ${t.scheduledFor} IS NOT NULL`,
+    ),
   ],
 );
 

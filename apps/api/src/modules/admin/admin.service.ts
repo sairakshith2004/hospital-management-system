@@ -1,7 +1,8 @@
 /**
  * Staff accounts and role assignment (docs/permissions.md note 1):
  *   - nobody changes their own status or roles;
- *   - ADM (user:manage) manages staff accounts but never SA accounts;
+ *   - HR (user:create) adds new staff and creates their logins; there is no self sign-up;
+ *   - ADM (user:manage) disables, re-enables and resets passwords, but never on SA accounts;
  *   - only user_role:assign (SA) grants or revokes roles, and the last active SA can't be
  *     removed or disabled;
  *   - a new account has no roles until one is assigned;

@@ -20,6 +20,8 @@
     "build": "npm run build --workspaces --if-present",
     "db:up": "docker compose up -d --wait db",
     "db:down": "docker compose down",
+    "video:up": "docker compose --profile video up -d --wait livekit",
+    "video:down": "docker compose --profile video stop livekit",
     "db:psql": "docker compose exec db sh -c 'psql -U \"$POSTGRES_USER\" -d hms_dev'",
     "db:env:check": "npm run db:env:check -w @hospitalos/api",
     "db:roles": "npm run db:roles -w @hospitalos/api",

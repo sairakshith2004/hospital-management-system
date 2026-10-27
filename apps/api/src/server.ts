@@ -1,6 +1,7 @@
 import type { RequestHandler } from 'express';
 import { createApp } from './app.js';
 import { EventHub } from './modules/communication/event-hub.js';
+import { createLiveKitSfu } from './modules/communication/sfu.js';
 import { EnvError, loadEnv } from './config/env.js';
 import { assertNotSuperuser, createPool } from './db/client.js';
 import { createLogger } from './lib/logger.js';
@@ -24,6 +25,14 @@ async function main(): Promise<void> {
     prune: true,
   });
   const events = new EventHub();
+  const sfu =
+    env.LIVEKIT_URL && env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET
+      ? createLiveKitSfu({
+          url: env.LIVEKIT_URL,
+          apiKey: env.LIVEKIT_API_KEY,
+          apiSecret: env.LIVEKIT_API_SECRET,
+        })
+      : undefined;
   // Local development: unlimited sign-in attempts (no per-IP limit, no account lockout),
   // so testing many accounts never blocks you. Production and tests keep both protections.
   const development = env.NODE_ENV === 'development';
@@ -31,10 +40,11 @@ async function main(): Promise<void> {
   const app = createApp({
     logger,
     events,
+    ...(sfu && { sfu }),
     db: pool,
     session: session.middleware,
     production,
-    ...(development && { loginLimiter: noLimit, signupLimiter: noLimit, lockout: false }),
+    ...(development && { loginLimiter: noLimit, lockout: false }),
     trustProxy: env.TRUST_PROXY,
   });
 

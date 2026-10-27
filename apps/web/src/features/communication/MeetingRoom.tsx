@@ -12,6 +12,7 @@ import { cn } from '../../lib/utils';
 import { useAuth } from '../auth/auth-context';
 import { COMM, onSignal, type Meeting } from './comm-api';
 import { MeshCall } from './mesh';
+import { SfuCall } from './sfu';
 import { Thread } from './MessagesTab';
 
 const HEARTBEAT_MS = 15_000;
@@ -36,7 +37,7 @@ export function MeetingRoom({ meetingId, onClose }: { meetingId: string; onClose
   const [micOn, setMicOn] = useState(true);
   const [camOn, setCamOn] = useState(true);
   const [chatOpen, setChatOpen] = useState(false);
-  const mesh = useRef<MeshCall | null>(null);
+  const mesh = useRef<MeshCall | SfuCall | null>(null);
   const screenRef = useRef<MediaStream | null>(null);
 
   const base = `${COMM}/meetings/${meetingId}`;
@@ -61,6 +62,13 @@ export function MeetingRoom({ meetingId, onClose }: { meetingId: string; onClose
       setCamOn(!!stream?.getVideoTracks().length);
       setMicOn(!!stream?.getAudioTracks().length);
 
+      const onRemote = (id: string, s: MediaStream | null) =>
+        setRemotes((r) => {
+          const next = { ...r };
+          if (s) next[id] = s;
+          else delete next[id];
+          return next;
+        });
       const call = new MeshCall({
         me,
         local: stream,
@@ -69,13 +77,7 @@ export function MeetingRoom({ meetingId, onClose }: { meetingId: string; onClose
             () => undefined,
             () => undefined,
           ),
-        onRemote: (id, s) =>
-          setRemotes((r) => {
-            const next = { ...r };
-            if (s) next[id] = s;
-            else delete next[id];
-            return next;
-          }),
+        onRemote,
       });
       mesh.current = call;
       // Listen before joining, so an offer sent the moment we join isn't missed.
@@ -83,14 +85,29 @@ export function MeetingRoom({ meetingId, onClose }: { meetingId: string; onClose
         if (sig.id === meetingId)
           void call.handle(sig.from, sig.kind, sig.data).catch(() => undefined);
       });
-      const { peers } = await apiFetch<{ peers: string[] }>(`${base}/join`, {
-        method: 'POST',
-        body: {},
-      });
+      const joined = await apiFetch<{ peers: string[]; sfu?: { url: string; token: string } }>(
+        `${base}/join`,
+        { method: 'POST', body: {} },
+      );
       if (cancelled) return;
+      if (joined.sfu) {
+        // The media server carries the call: no browser-to-browser connections.
+        call.close();
+        unsubscribe();
+        unsubscribe = undefined;
+        const sfu = new SfuCall({
+          local: stream,
+          onRemote,
+          onDisconnected: () =>
+            setNotice('Lost the connection to the video server. Rejoin to continue.'),
+        });
+        mesh.current = sfu;
+        await sfu.connect(joined.sfu.url, joined.sfu.token);
+        if (cancelled) return;
+      }
       void reload(`${COMM}/meetings`, `${COMM}/summary`);
       setPhase('live');
-      for (const p of peers) void call.connectTo(p).catch(() => undefined);
+      if (!joined.sfu) for (const p of joined.peers) void call.connectTo(p).catch(() => undefined);
       heartbeat = setInterval(() => {
         apiFetch(`${base}/heartbeat`, { method: 'POST', body: {} }).catch((err: unknown) => {
           if (errorCode(err) === 'NOT_IN_MEETING') setPhase('ended');

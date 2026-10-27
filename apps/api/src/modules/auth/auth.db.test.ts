@@ -366,7 +366,6 @@ describe('requirePermission', () => {
       authRoutes({
         db,
         loginLimiter: (_q, _s, n) => n(),
-        signupLimiter: (_q, _s, n) => n(),
         production: false,
       }),
     );

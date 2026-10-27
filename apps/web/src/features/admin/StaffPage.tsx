@@ -6,6 +6,7 @@ import {
   type StaffAccount,
 } from '@hospitalos/shared';
 import { useState } from 'react';
+import { useSearchParams } from 'react-router';
 import { Alert } from '../../components/ui/alert';
 import { Badge } from '../../components/ui/badge';
 import { Button } from '../../components/ui/button';
@@ -33,7 +34,9 @@ export function StaffPage() {
   const q = useApi<{ staff: StaffAccount[] }>('/api/admin/staff');
   const depts = useApi<{ departments: Department[] }>('/api/departments');
   const [filter, setFilter] = useState('');
-  const [adding, setAdding] = useState(false);
+  // ?add=1 (the "Add new staff member" shortcut after sign-in) opens the form straight away.
+  const [params] = useSearchParams();
+  const [adding, setAdding] = useState(() => params.get('add') === '1' && can('user:create'));
   const [act, setAct] = useState<Act | null>(null);
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
@@ -106,7 +109,7 @@ export function StaffPage() {
       <PageHeader
         title="Staff"
         actions={
-          can('user:manage') &&
+          can('user:create') &&
           !adding && <Button onClick={() => setAdding(true)}>Add staff member</Button>
         }
       />
@@ -334,7 +337,7 @@ export function StaffPage() {
                             </Button>
                           </>
                         )}
-                        {can('user:manage') && !s.user && s.employmentStatus !== 'exited' && (
+                        {can('user:create') && !s.user && s.employmentStatus !== 'exited' && (
                           <Button
                             size="sm"
                             variant="ghost"

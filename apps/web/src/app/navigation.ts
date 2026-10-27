@@ -141,7 +141,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Staff',
     path: '/admin/staff',
     section: 'People',
-    anyOf: ['user:manage', 'user_role:assign', 'employee:read'],
+    anyOf: ['user:create', 'user:manage', 'user_role:assign', 'employee:read'],
   },
   { label: 'Attendance', path: '/hr/attendance', section: 'People', anyOf: ['attendance:manage'] },
   {
