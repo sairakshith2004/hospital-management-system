@@ -31,6 +31,8 @@ export interface AuthRoutesOptions {
   loginLimiter: RequestHandler;
   signupLimiter: RequestHandler;
   production: boolean;
+  /** Account lockout after repeated wrong passwords (on unless turned off for development). */
+  lockout?: boolean;
 }
 
 const invalidCredentials = () =>
@@ -66,13 +68,14 @@ export function authRoutes({
   loginLimiter,
   signupLimiter,
   production,
+  lockout = true,
 }: AuthRoutesOptions): Router {
   const router = Router();
 
   router.post('/login', loginLimiter, requireJson, async (req, res: Response) => {
     const body = LoginBody.parse(req.body);
     const context = auditContext(req, res);
-    const result = await authenticate(db, body, context);
+    const result = await authenticate(db, body, context, { lockout });
     if (!result.ok && result.reason === 'pending')
       throw new AppError(
         403,

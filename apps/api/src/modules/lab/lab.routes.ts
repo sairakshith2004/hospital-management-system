@@ -3,6 +3,7 @@
  *   POST /api/lab/tests                       price:manage (creates the test and its price)
  *   POST /api/encounters/:id/lab-orders       lab_order:create (own open encounter)
  *   GET  /api/lab/orders?status=              lab:process | lab_result:enter | lab_result:verify
+ *   GET  /api/lab/patients/:mrn               lab roles; one patient's orders by patient number (audited)
  *   GET  /api/lab/orders/:id                  lab roles; a doctor only with a care relationship (audited)
  *   POST /api/lab/orders/:id/collect          lab:process
  *   POST /api/lab/orders/:id/results          lab_result:enter
@@ -28,6 +29,7 @@ import { AppError } from '../../lib/errors.js';
 import { requireAnyPermission, requirePermission, requireUser } from '../../middleware/auth.js';
 import { doctorIdOfUser } from '../scheduling/scheduling.repo.js';
 import { authorizeClinicalRead } from '../clinical/access.js';
+import { lookupPatientByMrn } from '../patients/lookup.js';
 import {
   cancelOrder,
   collectSample,
@@ -137,6 +139,20 @@ export function labRoutes(db: Database): Router {
         [status ?? null],
       );
       res.json({ orders: rows.map((r) => r.o) });
+    },
+  );
+
+  router.get(
+    '/lab/patients/:mrn',
+    requireAnyPermission(db, [...LAB_ROLES, 'operations:oversee']),
+    async (req, res) => {
+      const patient = await lookupPatientByMrn(db, req, res, 'lab');
+      const { rows } = await db.query<{ o: LabOrderView }>(
+        `SELECT ${ORDER_JSON} AS o ${ORDER_FROM}
+         WHERE o.patient_id = $1 ORDER BY o.created_at DESC LIMIT 200`,
+        [patient.id],
+      );
+      res.json({ patient, orders: rows.map((r) => r.o) });
     },
   );
 

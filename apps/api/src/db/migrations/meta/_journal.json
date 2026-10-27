@@ -127,6 +127,34 @@
       "when": 1792386705785,
       "tag": "0017_signup_pending_approval",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1792558124097,
+      "tag": "0018_communication",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1792558133362,
+      "tag": "0019_communication_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1792559977527,
+      "tag": "0020_meetings",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1792559977952,
+      "tag": "0021_meetings_rules",
+      "breakpoints": true
     }
   ]
 }

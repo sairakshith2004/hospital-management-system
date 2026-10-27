@@ -125,6 +125,22 @@ export const PERMISSIONS = [
   { code: 'campaign:manage', description: 'Manage marketing campaigns' },
   { code: 'report:marketing', description: 'View aggregate marketing reports' },
   { code: 'break_glass:use', description: 'Use emergency access to a patient record' },
+  {
+    code: 'message:send',
+    description: 'Use the communication hub: read notices, message staff',
+  },
+  {
+    code: 'notice:publish',
+    description: 'Publish official notices to all staff, a role, a department or one person',
+  },
+  {
+    code: 'call_request:create',
+    description: 'Ask a doctor for a call; the doctor accepts or declines',
+  },
+  {
+    code: 'meeting:create',
+    description: 'Start video meetings, including emergency meetings that ring everyone invited',
+  },
 ] as const;
 
 export type PermissionCode = (typeof PERMISSIONS)[number]['code'];
@@ -206,6 +222,10 @@ export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
     'employee:read',
     'leave:request',
     'report:marketing',
+    'message:send',
+    'notice:publish',
+    'call_request:create',
+    'meeting:create',
   ],
   REC: [
     'patient:create',
@@ -228,6 +248,7 @@ export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
     'discount:apply',
     'leave:request',
     'enquiry:manage',
+    'message:send',
   ],
   DOC: [
     'patient:read_demographics',
@@ -246,6 +267,9 @@ export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
     'medicine:search',
     'leave:request',
     'break_glass:use',
+    'message:send',
+    'call_request:create',
+    'meeting:create',
   ],
   NUR: [
     'patient:read_demographics',
@@ -256,6 +280,9 @@ export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
     'vitals:record',
     'medicine:search',
     'leave:request',
+    'message:send',
+    'call_request:create',
+    'meeting:create',
   ],
   PHA: [
     'patient:read_demographics',
@@ -275,6 +302,8 @@ export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
     'payment:record',
     'refund:request',
     'leave:request',
+    'message:send',
+    'call_request:create',
   ],
   LAB: [
     'patient:read_demographics',
@@ -283,6 +312,8 @@ export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
     'lab_result:enter',
     'lab_result:verify',
     'leave:request',
+    'message:send',
+    'call_request:create',
   ],
   FIN: [
     'patient:read_demographics',
@@ -301,6 +332,7 @@ export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
     'expense:create',
     'report:finance',
     'leave:request',
+    'message:send',
   ],
   HR: [
     'employee:read',
@@ -309,6 +341,9 @@ export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
     'leave:approve',
     'payroll:manage',
     'leave:request',
+    'message:send',
+    'notice:publish',
+    'meeting:create',
   ],
   INV: [
     'medicine:search',
@@ -322,6 +357,14 @@ export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
     'leave:request',
     'equipment:manage',
     'maintenance:log',
+    'message:send',
   ],
-  MKT: ['schedule:read', 'leave:request', 'enquiry:manage', 'campaign:manage', 'report:marketing'],
+  MKT: [
+    'schedule:read',
+    'leave:request',
+    'enquiry:manage',
+    'campaign:manage',
+    'report:marketing',
+    'message:send',
+  ],
 };

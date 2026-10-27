@@ -1,5 +1,7 @@
 /**
  *   GET  /api/pharmacy/prescriptions?status=open|dispensed|all   prescription:dispense | prescription:close
+ *   GET  /api/pharmacy/patients/:mrn                             same; one patient's prescriptions and
+ *                                                                 active allergies, by patient number (audited)
  *   GET  /api/pharmacy/prescriptions/:id                         same; with the patient's active allergies
  *                                                                 and usable batches (FEFO) per item
  *   POST /api/pharmacy/prescriptions/:id/dispense                prescription:dispense
@@ -15,6 +17,7 @@ import { auditContext } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import { requireAnyPermission, requirePermission, requireUser } from '../../middleware/auth.js';
 import { PRESCRIPTION_FROM, PRESCRIPTION_JSON } from '../clinical/clinical.repo.js';
+import { lookupPatientByMrn } from '../patients/lookup.js';
 import { closePrescription, dispense } from './pharmacy.service.js';
 
 const uuid = (value: unknown) => {
@@ -51,6 +54,25 @@ export function pharmacyRoutes(db: Database): Router {
       [statuses],
     );
     res.json({ prescriptions: rows.map((r) => ({ ...r.p, allergies: r.allergies })) });
+  });
+
+  router.get('/pharmacy/patients/:mrn', canView, async (req, res) => {
+    const patient = await lookupPatientByMrn(db, req, res, 'pharmacy');
+    const { rows } = await db.query(
+      `SELECT ${PRESCRIPTION_JSON} AS p ${PRESCRIPTION_FROM}
+       WHERE p.patient_id = $1 ORDER BY p.issued_at DESC LIMIT 100`,
+      [patient.id],
+    );
+    // Note 2: pharmacy sees allergies only for patients it has prescriptions for.
+    const allergies =
+      rows.length === 0
+        ? []
+        : (
+            await db.query(`SELECT ${ALLERGIES} AS a FROM (SELECT $1::uuid AS patient_id) p`, [
+              patient.id,
+            ])
+          ).rows[0]!.a;
+    res.json({ patient, allergies, prescriptions: rows.map((r) => r.p) });
   });
 
   router.get('/pharmacy/prescriptions/:id', canView, async (req, res) => {

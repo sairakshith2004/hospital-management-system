@@ -89,6 +89,10 @@ In this table:
 | campaign:manage | ● | | | | | | | | | | ● |
 | report:marketing (aggregate only) | ● | ● | | | | | | | | | ● |
 | break_glass:use | | | | ● | | | | | | | |
+| message:send (communication hub: notices, staff messages) | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● |
+| notice:publish (official notices) | ● | ● | | | | | | | ● | | |
+| call_request:create (ask a doctor for a call; note 14) | ● | ● | | ● | ● | ● | ● | | | | |
+| meeting:create (video meetings, emergency meetings; note 15) | ● | ● | | ● | ● | | | | ● | | |
 
 Notes:
 1. Account and role management (C2):
@@ -98,7 +102,7 @@ Notes:
    - **No user, including SA, can change their own role assignments or the permissions of a role they hold.** Every SA holds the SA role, so the SA role's permissions are fixed by the seed.
    - The last active SA can't be disabled or lose the SA role.
    - Every account, role or permission change needs a reason and is audited (section 5).
-2. PHA sees only the allergies and current medications of patients whose prescriptions are in the dispensing queue. LAB sees only the clinical details attached to the order. Neither sees clinical notes or diagnoses.
+2. PHA sees only the allergies and current medications of patients whose prescriptions are in the dispensing queue. LAB sees only the clinical details attached to the order. Neither sees clinical notes or diagnoses. A department lookup by patient number (pharmacy, lab, billing; 2026-10-27) returns that department's own records for the patient plus identifiers (MRN, name, date of birth, sex; no contact details), with allergies for pharmacy only when the patient has a prescription. Every lookup is audited as `patient.lookup` with the department.
 3. Stock permissions are separate per operation **and** scoped by the kind of location affected (C1). The service checks both on the server, after locking the batch or transfer:
 
    | Operation | Permission | Holder | Allowed location kind |
@@ -133,6 +137,8 @@ Notes:
     - A request for another doctor's appointment or queue without `appointment:read_all` returns 404, the same as an unknown ID, so the record's existence isn't revealed. It writes an `access.denied` audit row.
     - `appointment:reschedule` is separate from `appointment:book` and `appointment:cancel`. A reschedule marks the original `rescheduled` and books the successor in one transaction; if the new slot is unavailable, nothing changes.
 13. **Super Admin as chief executive (2026-10-19, owner decision).** SA holds every permission except the clinical work that must carry a clinician's own name (`allergy:record`, `history:write`, consulting, prescribing, lab ordering, `vitals:record`, dispensing, `lab:process`, result entry and verification, `break_glass:use`), so one SA portal shows every department's dashboard and menu. `operations:oversee` (SA only) adds read-only views of the pharmacy prescription queue and the lab worklist; acting on them still needs PHA or LAB. SA can read any patient's clinical record without a care relationship; every such read is audited as `patient.clinical.read` with `access: executive`. SA still can't decide their own leave or approve their own expense, discount or refund (the same self-decision rules as everyone), and the account-management rules in note 1 are unchanged.
+14. **Communication hub (2026-10-21, owner decision).** Every role can read the notices addressed to it and message other staff (`message:send`). Only members of a conversation can read it; anyone else gets 404. Messages can't be edited or deleted. `notice:publish` (SA, ADM, HR) sends an official notice to all staff, one role, one department or one person. `call_request:create` lets medical staff and administrators ask a doctor for a call. Only the named doctor can accept or decline, nobody can call themselves, an unanswered request expires after 10 minutes, and a doctor who is off duty can only be called in an emergency. Doctors set their own availability; no permission is needed for that, only an active doctor profile. Publishing a notice and every call-request decision are audited. Messages hold free text, so staff must not put more patient detail in them than the conversation needs.
+15. **Video meetings (2026-10-21, owner decision).** `meeting:create` (SA, ADM, DOC, NUR, HR) starts a video meeting and invites people one by one or by whole role (all doctors, nurses, HR, administrators, Super Admins). An emergency meeting rings every invitee with a full-screen alert. Any member of a conversation can also start a video call with that conversation's members, so a nurse whose call request a doctor accepted can video-call that doctor. Only invitees can see or join a meeting (others get 404), at most 8 people can be in it at once, and only the host can end it for everyone. Video and audio go directly between browsers (WebRTC); the server only relays connection details between people who are both in the meeting, and nothing is recorded. Starting, joining, leaving and ending are audited.
 
 ## 3. Patient-data access policy
 
@@ -205,6 +211,7 @@ No other role has access to clinical data.
 
 **Events audited:**
 - `patient.clinical.read` on every clinical read. If the audit write fails, no data is returned.
+- `patient.lookup` on every department lookup by patient number (note 2), with `department`. If the audit write fails, no data is returned.
 - Every create, update or status change on: patients, appointments, encounters, notes, prescriptions, dispensings, dispensing returns, stock movements, stock transfers, invoices, discounts, payments, refunds, credit notes, nurse assignments, users, roles and settings.
 - **Stock operations** (C1), each a distinct action:
   - `stock.adjusted`, with the actor, batch, location, movement kind and reason. The movement itself stores the signed quantity and resulting balance.

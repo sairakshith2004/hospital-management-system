@@ -1,4 +1,6 @@
+import type { RequestHandler } from 'express';
 import { createApp } from './app.js';
+import { EventHub } from './modules/communication/event-hub.js';
 import { EnvError, loadEnv } from './config/env.js';
 import { assertNotSuperuser, createPool } from './db/client.js';
 import { createLogger } from './lib/logger.js';
@@ -21,11 +23,18 @@ async function main(): Promise<void> {
     logger,
     prune: true,
   });
+  const events = new EventHub();
+  // Local development: unlimited sign-in attempts (no per-IP limit, no account lockout),
+  // so testing many accounts never blocks you. Production and tests keep both protections.
+  const development = env.NODE_ENV === 'development';
+  const noLimit: RequestHandler = (_req, _res, next) => next();
   const app = createApp({
     logger,
+    events,
     db: pool,
     session: session.middleware,
     production,
+    ...(development && { loginLimiter: noLimit, signupLimiter: noLimit, lockout: false }),
     trustProxy: env.TRUST_PROXY,
   });
 
@@ -36,6 +45,8 @@ async function main(): Promise<void> {
   const shutdown = (signal: string) => {
     logger.info({ signal }, 'shutting down');
     // Stop accepting requests, then stop the session cleanup timer, then close the pool.
+    // Live-update streams never finish on their own, so end them first.
+    events.closeAll();
     server.close(() => {
       session.store.close();
       void pool.end().finally(() => process.exit(0));

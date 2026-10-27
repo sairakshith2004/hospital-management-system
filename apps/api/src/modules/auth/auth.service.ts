@@ -14,17 +14,23 @@ export type FailureReason = 'unknown_user' | 'inactive' | 'locked' | 'bad_passwo
 export type AuthenticateResult =
   { ok: true; userId: string } | { ok: false; reason: FailureReason };
 
+export interface AuthenticateOptions {
+  /** Lock the account after repeated wrong passwords. Off only for local development. */
+  lockout?: boolean;
+}
+
 export async function authenticate(
   db: Database,
   { username, password }: LoginBody,
   context: AuditContext,
+  { lockout = true }: AuthenticateOptions = {},
 ): Promise<AuthenticateResult> {
   const candidate = await findLoginCandidate(db, username);
 
   let reason: FailureReason | undefined;
   if (!candidate) reason = 'unknown_user';
   else if (candidate.status !== 'active' && !candidate.pendingApproval) reason = 'inactive';
-  else if (candidate.locked) reason = 'locked';
+  else if (lockout && candidate.locked) reason = 'locked';
 
   if (reason || !candidate) {
     // Same work as a real check, so timing doesn't reveal which accounts exist.
@@ -45,7 +51,7 @@ export async function authenticate(
 
   if (!(await verifyPassword(candidate.passwordHash, password))) {
     await withTransaction(db, async (tx) => {
-      const locked = await recordFailedLogin(tx, candidate.id);
+      const locked = lockout && (await recordFailedLogin(tx, candidate.id));
       const base = { actor: SYSTEM, entityType: 'user', entityId: candidate.id };
       await recordAudit(
         tx,

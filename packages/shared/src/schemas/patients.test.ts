@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   createPatientSchema,
   hospitalToday,
+  normalizeMrn,
   patientSearchSchema,
   updatePatientSchema,
 } from './patients.js';
@@ -71,5 +72,20 @@ describe('updatePatientSchema and patientSearchSchema', () => {
   it('computes "today" in Asia/Kolkata, not UTC', () => {
     // 2026-10-16T20:00Z is already 2026-10-17 01:30 in India.
     expect(hospitalToday(new Date('2026-10-16T20:00:00Z'))).toBe('2026-10-17');
+  });
+});
+
+describe('normalizeMrn', () => {
+  it.each([
+    ['MRN000123', 'MRN000123'],
+    ['mrn 123', 'MRN000123'],
+    ['123', 'MRN000123'],
+    ['  000123 ', 'MRN000123'],
+    ['MRN1234567', 'MRN1234567'],
+  ])('reads %s as %s', (input, mrn) => {
+    expect(normalizeMrn(input)).toBe(mrn);
+  });
+  it.each(['', 'MRN', 'abc', 'MRN12a', '12-34', 'MRN0000000000'])('rejects %j', (input) => {
+    expect(normalizeMrn(input)).toBeNull();
   });
 });
