@@ -68,6 +68,7 @@ export async function findSessionUser(
 ): Promise<SessionUserRow | undefined> {
   const { rows } = await db.query<SessionUserRow>(
     `SELECT u.id, u.username::text AS username, e.full_name AS "fullName", u.status,
+            u.must_change_password AS "mustChangePassword",
             coalesce(array_agg(DISTINCT r.code) FILTER (WHERE r.code IS NOT NULL), '{}')
               AS roles,
             coalesce(array_agg(DISTINCT p.code) FILTER (WHERE p.code IS NOT NULL), '{}')

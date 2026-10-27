@@ -17,6 +17,8 @@ export interface AuthContextValue {
   /** Display only: the server checks every permission again. */
   can(permission: PermissionCode): boolean;
   retry(): void;
+  /** Reloads the signed-in user from the server (e.g. after changing the password). */
+  refresh(): Promise<void>;
 }
 
 export const AuthContext = createContext<AuthContextValue | null>(null);

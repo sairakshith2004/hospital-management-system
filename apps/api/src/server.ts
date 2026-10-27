@@ -2,6 +2,7 @@ import type { RequestHandler } from 'express';
 import { createApp } from './app.js';
 import { EventHub } from './modules/communication/event-hub.js';
 import { createLiveKitSfu } from './modules/communication/sfu.js';
+import { createSmtpMailer } from './lib/mailer.js';
 import { EnvError, loadEnv } from './config/env.js';
 import { assertNotSuperuser, createPool } from './db/client.js';
 import { createLogger } from './lib/logger.js';
@@ -25,6 +26,9 @@ async function main(): Promise<void> {
     prune: true,
   });
   const events = new EventHub();
+  const mailer = env.SMTP_URL
+    ? createSmtpMailer({ url: env.SMTP_URL, from: env.MAIL_FROM })
+    : undefined;
   const sfu =
     env.LIVEKIT_URL && env.LIVEKIT_API_KEY && env.LIVEKIT_API_SECRET
       ? createLiveKitSfu({
@@ -41,10 +45,12 @@ async function main(): Promise<void> {
     logger,
     events,
     ...(sfu && { sfu }),
+    ...(mailer && { mailer }),
+    appUrl: env.APP_URL,
     db: pool,
     session: session.middleware,
     production,
-    ...(development && { loginLimiter: noLimit, lockout: false }),
+    ...(development && { loginLimiter: noLimit, passwordLimiter: noLimit, lockout: false }),
     trustProxy: env.TRUST_PROXY,
   });
 

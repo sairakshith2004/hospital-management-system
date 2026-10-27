@@ -16,6 +16,11 @@ export interface SessionUser {
   /** Active role codes, e.g. ["REC"]. Empty for an account awaiting role assignment. */
   roles: string[];
   permissions: PermissionCode[];
+  /**
+   * HR or an administrator chose the current password: until the person sets their own,
+   * the API answers 403 PASSWORD_CHANGE_REQUIRED everywhere except changing it and signing out.
+   */
+  mustChangePassword: boolean;
 }
 
 /** Returned by POST /api/auth/login and GET /api/auth/me. */
@@ -39,6 +44,7 @@ export type ApiErrorCode =
   | 'CONFLICT'
   | 'DUPLICATE_SUSPECTED'
   | 'STALE_VERSION'
+  | 'PASSWORD_CHANGE_REQUIRED'
   | 'INTERNAL_ERROR';
 
 export interface ApiErrorBody {

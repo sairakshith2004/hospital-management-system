@@ -10,6 +10,11 @@ import { HomePage } from './app/HomePage';
 import { NotFoundPage } from './app/NotFoundPage';
 import { AuthProvider } from './features/auth/AuthProvider';
 import { LoginPage } from './features/auth/LoginPage';
+import {
+  ChangePasswordPage,
+  ForgotPasswordPage,
+  ResetPasswordPage,
+} from './features/auth/PasswordPages';
 import { PortalsPage } from './features/auth/PortalsPage';
 import { RequireAuth } from './features/auth/RequireAuth';
 import { RequireAnyPermission, RequirePermission } from './features/auth/RequirePermission';
@@ -72,12 +77,16 @@ const STOCK_VIEW: PermissionCode[] = [
 const TRANSFERS: PermissionCode[] = STOCK_VIEW.filter((p) => p.startsWith('stock_transfer'));
 const LAB: PermissionCode[] = ['lab:process', 'lab_result:enter', 'lab_result:verify'];
 
-/** Every route except /login requires a session. There is no public sign-up: HR creates accounts. */
+/** Every route except /login, /forgot-password and /reset-password requires a session. There is no public sign-up: HR creates accounts. */
 export const routes: RouteObject[] = [
   { path: '/login', element: <LoginPage /> },
+  { path: '/forgot-password', element: <ForgotPasswordPage /> },
+  { path: '/reset-password', element: <ResetPasswordPage /> },
   {
     element: <RequireAuth />,
     children: [
+      // Change your own password (required first when HR or an administrator set it).
+      { path: 'account/password', element: <ChangePasswordPage /> },
       // Right after signing in: choose a department portal card.
       { path: 'portals', element: <PortalsPage /> },
       {

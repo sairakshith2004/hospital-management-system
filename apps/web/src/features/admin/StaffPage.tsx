@@ -1,6 +1,7 @@
 import {
   ROLE_CODES,
   ROLE_NAMES,
+  USERNAME_RULE,
   type Department,
   type RoleCode,
   type StaffAccount,
@@ -26,6 +27,7 @@ type Act =
   | { kind: 'password'; s: StaffAccount }
   | { kind: 'role'; s: StaffAccount; role: string; grant: boolean }
   | { kind: 'login'; s: StaffAccount }
+  | { kind: 'email'; s: StaffAccount }
   | { kind: 'employment'; s: StaffAccount; to: string };
 
 /** Staff and their logins. Roles are assigned by a Super Admin; nobody changes their own. */
@@ -40,15 +42,25 @@ export function StaffPage() {
   const [act, setAct] = useState<Act | null>(null);
   const [password, setPassword] = useState('');
   const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [notice, setNotice] = useState<string | null>(null);
   const [form, setForm] = useState({
     fullName: '',
     employeeNo: '',
     departmentId: '',
     designation: '',
+    email: '',
     username: '',
     password: '',
+    /** Ticked only for someone who won't use HospitalOS (e.g. support staff HR tracks). */
+    noLogin: false,
   });
+  const usernameProblem =
+    form.username && !USERNAME_RULE.test(form.username)
+      ? '3–50 characters, starting with a letter: lowercase letters, digits, . _ or -'
+      : null;
+  const passwordProblem =
+    form.password && form.password.length < 12 ? 'At least 12 characters' : null;
   const reload = ['/api/admin/staff'];
   const done = (m: string) => {
     setAct(null);
@@ -56,22 +68,32 @@ export function StaffPage() {
     setUsername('');
     setNotice(m);
   };
-  const create = useAction('POST', '/api/admin/staff', {
-    invalidate: reload,
-    onSuccess: () => {
-      setAdding(false);
-      setForm({
-        fullName: '',
-        employeeNo: '',
-        departmentId: '',
-        designation: '',
-        username: '',
-        password: '',
-      });
-      setNotice('Staff member added. Assign a role so they can use HospitalOS.');
+  const create = useAction<{ fullName: string; username?: string; [field: string]: unknown }>(
+    'POST',
+    '/api/admin/staff',
+    {
+      invalidate: reload,
+      onSuccess: (_res, body) => {
+        setAdding(false);
+        setForm({
+          fullName: '',
+          employeeNo: '',
+          departmentId: '',
+          designation: '',
+          email: '',
+          username: '',
+          password: '',
+          noLogin: false,
+        });
+        setNotice(
+          body.username
+            ? `Account created for ${body.fullName}. They sign in as “${body.username}” with the password you set, and choose their own at first sign-in. The Super Admin then gives them a role.`
+            : `${body.fullName} added without a login. Use “Create login” if they need to sign in later.`,
+        );
+      },
     },
-  });
-  const action = useAction<{ reason: string }>(
+  );
+  const action = useAction<object>(
     'POST',
     () => {
       if (!act) return '';
@@ -80,6 +102,7 @@ export function StaffPage() {
       if (act.kind === 'role')
         return `/api/admin/users/${act.s.user!.id}/roles/${act.grant ? 'grant' : 'revoke'}`;
       if (act.kind === 'login') return `/api/admin/staff/${act.s.employeeId}/login`;
+      if (act.kind === 'email') return `/api/admin/staff/${act.s.employeeId}/email`;
       return `/api/hr/employees/${act.s.employeeId}/status`;
     },
     { invalidate: reload, onSuccess: () => done('Saved.') },
@@ -102,7 +125,9 @@ export function StaffPage() {
             ? { roleCode: act.role, reason }
             : act.kind === 'login'
               ? { username, password, reason }
-              : { status: act.to, reason };
+              : act.kind === 'email'
+                ? { email: email.trim() || null }
+                : { status: act.to, reason };
 
   return (
     <div className="space-y-4">
@@ -149,28 +174,56 @@ export function StaffPage() {
               />
             </FormField>
             <FormField
-              id="st-user"
-              label="Username (optional)"
-              hint="Lowercase; leave empty for no login"
+              id="st-email"
+              label="Work email (optional)"
+              hint="Where password-reset links go"
             >
               <Input
-                value={form.username}
-                onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase() })}
+                type="email"
+                value={form.email}
+                onChange={(e) => setForm({ ...form, email: e.target.value })}
               />
             </FormField>
-            <FormField
-              id="st-pass"
-              label="Initial password"
-              hint="12+ characters; share it privately"
-            >
-              <Input
-                type="password"
-                autoComplete="new-password"
-                value={form.password}
-                onChange={(e) => setForm({ ...form, password: e.target.value })}
-              />
-            </FormField>
+            {!form.noLogin && (
+              <>
+                <FormField
+                  id="st-user"
+                  label="Username for signing in"
+                  required
+                  hint="Starts with a letter; lowercase letters, digits, . _ or -"
+                  {...(usernameProblem && { error: usernameProblem })}
+                >
+                  <Input
+                    autoComplete="off"
+                    value={form.username}
+                    onChange={(e) => setForm({ ...form, username: e.target.value.toLowerCase() })}
+                  />
+                </FormField>
+                <FormField
+                  id="st-pass"
+                  label="First password"
+                  required
+                  hint="12+ characters; share it privately. They choose their own at first sign-in."
+                  {...(passwordProblem && { error: passwordProblem })}
+                >
+                  <Input
+                    type="password"
+                    autoComplete="new-password"
+                    value={form.password}
+                    onChange={(e) => setForm({ ...form, password: e.target.value })}
+                  />
+                </FormField>
+              </>
+            )}
           </div>
+          <label className="flex items-center gap-2 text-sm text-slate-700 dark:text-slate-300">
+            <input
+              type="checkbox"
+              checked={form.noLogin}
+              onChange={(e) => setForm({ ...form, noLogin: e.target.checked })}
+            />
+            This person won’t use HospitalOS (record only, no login)
+          </label>
           {create.error && <Alert tone="error">{create.error}</Alert>}
           <div className="flex justify-end gap-2">
             <Button variant="secondary" onClick={() => setAdding(false)}>
@@ -182,6 +235,8 @@ export function StaffPage() {
                 !form.employeeNo ||
                 !form.departmentId ||
                 !form.designation ||
+                (!form.noLogin &&
+                  (!form.username || !form.password || !!usernameProblem || !!passwordProblem)) ||
                 create.pending
               }
               onClick={() =>
@@ -190,12 +245,13 @@ export function StaffPage() {
                   employeeNo: form.employeeNo,
                   departmentId: form.departmentId,
                   designation: form.designation,
-                  ...(form.username ? { username: form.username, password: form.password } : {}),
+                  ...(form.email.trim() ? { email: form.email.trim() } : {}),
+                  ...(form.noLogin ? {} : { username: form.username, password: form.password }),
                   reason: 'New staff member',
                 })
               }
             >
-              Add
+              {form.noLogin ? 'Add staff record' : 'Add and create login'}
             </Button>
           </div>
         </Card>
@@ -232,6 +288,7 @@ export function StaffPage() {
                     {s.fullName}
                     <span className="block text-xs text-slate-500">
                       {s.employeeNo} · {s.designation}
+                      {s.email && <> · {s.email}</>}
                     </span>
                     {s.employmentStatus !== 'active' && (
                       <Badge tone="warning">{s.employmentStatus.replace('_', ' ')}</Badge>
@@ -337,6 +394,18 @@ export function StaffPage() {
                             </Button>
                           </>
                         )}
+                        {(can('user:create') || can('user:manage')) && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={() => {
+                              setEmail(s.email ?? '');
+                              setAct({ kind: 'email', s });
+                            }}
+                          >
+                            {s.email ? 'Edit email' : 'Set email'}
+                          </Button>
+                        )}
                         {can('user:create') && !s.user && s.employmentStatus !== 'exited' && (
                           <Button
                             size="sm"
@@ -386,7 +455,9 @@ export function StaffPage() {
                   ? `${act.grant ? 'Grant' : 'Revoke'} ${ROLE_NAMES[act.role as RoleCode] ?? act.role} — ${act.s.fullName}`
                   : act.kind === 'login'
                     ? `Create login for ${act.s.fullName}`
-                    : `${act.s.fullName} has left`
+                    : act.kind === 'email'
+                      ? `Work email for ${act.s.fullName}`
+                      : `${act.s.fullName} has left`
         }
         description={
           act?.kind === 'status' && act.s.user?.status === 'pending'
@@ -396,17 +467,24 @@ export function StaffPage() {
             : act?.kind === 'status' && act.to === 'disabled'
               ? 'They are signed out at once.'
               : act?.kind === 'password'
-                ? 'They are signed out at once and must use the new password.'
-                : act?.kind === 'employment'
-                  ? 'Their login is disabled and they are signed out.'
-                  : undefined
+                ? 'They are signed out at once, and must choose their own password when they next sign in.'
+                : act?.kind === 'email'
+                  ? 'Password-reset links go here. Leave empty to remove it.'
+                  : act?.kind === 'employment'
+                    ? 'Their login is disabled and they are signed out.'
+                    : undefined
         }
         confirmLabel="Confirm"
-        reasonLabel="Reason (kept in the audit log)"
+        {...(act?.kind !== 'email' && { reasonLabel: 'Reason (kept in the audit log)' })}
         pending={action.pending}
         error={action.error}
         onConfirm={(reason) => action.run(bodyFor(reason))}
       >
+        {act?.kind === 'email' && (
+          <FormField id="lg-email" label="Work email">
+            <Input type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </FormField>
+        )}
         {act?.kind === 'login' && (
           <FormField id="lg-user" label="Username" required>
             <Input value={username} onChange={(e) => setUsername(e.target.value.toLowerCase())} />

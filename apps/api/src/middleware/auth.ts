@@ -55,12 +55,33 @@ export function loadUser(db: Queryable): RequestHandler {
       fullName: user.fullName,
       roles: user.roles,
       permissions: user.permissions,
+      mustChangePassword: user.mustChangePassword,
       can: (permission) => granted.has(permission),
     };
     res.locals.user = authUser;
     next();
   };
 }
+
+/** What someone who must choose a new password may still do (docs/permissions.md note 1). */
+const ALLOWED_BEFORE_PASSWORD_CHANGE = new Set([
+  'GET /api/auth/me',
+  'POST /api/auth/logout',
+  'POST /api/auth/password/change',
+]);
+
+/**
+ * HR or an administrator chose this account's password: until the person picks their own,
+ * every other request is refused (enforced here, not only by the web app).
+ */
+export const requirePasswordChosen: RequestHandler = (req, res, next) => {
+  const user = currentUser(res);
+  if (!user?.mustChangePassword) return next();
+  if (ALLOWED_BEFORE_PASSWORD_CHANGE.has(`${req.method} ${req.path}`)) return next();
+  next(
+    new AppError(403, 'PASSWORD_CHANGE_REQUIRED', 'Choose your own password before continuing.'),
+  );
+};
 
 export const requireAuth: RequestHandler = (_req, res, next) => {
   next(currentUser(res) ? undefined : unauthenticated());

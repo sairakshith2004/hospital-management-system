@@ -124,6 +124,18 @@ describe('staff accounts and roles', () => {
       ).toBe('SELF_CHANGE');
       expect((await audit('user_role.granted'))[0].changes).toEqual({ role: 'REC' });
       const rec = await f.session('zz_new_rec', PASSWORD);
+      // HR chose the password, so they must pick their own before working.
+      expect((await rec.get('/api/patients?q=zz')).body.error.code).toBe(
+        'PASSWORD_CHANGE_REQUIRED',
+      );
+      expect(
+        (
+          await rec.post('/api/auth/password/change', {
+            currentPassword: PASSWORD,
+            newPassword: 'Zz-own-chosen-Passw0rd',
+          })
+        ).status,
+      ).toBe(200);
       expect((await rec.get('/api/patients?q=zz')).status).toBe(200);
 
       // ADM can't touch an SA account; nobody changes their own status.
@@ -151,7 +163,7 @@ describe('staff accounts and roles', () => {
         status: 'active',
         reason: 'Zz back',
       });
-      const rec2 = await f.session('zz_new_rec', PASSWORD);
+      const rec2 = await f.session('zz_new_rec', 'Zz-own-chosen-Passw0rd');
       expect(
         (
           await adm.post(`/api/admin/users/${newUserId}/password`, {

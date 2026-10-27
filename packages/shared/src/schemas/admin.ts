@@ -4,6 +4,7 @@
  */
 import { z } from 'zod';
 import type { PermissionCode } from '../permissions.js';
+import { staffEmail } from './account.js';
 
 const text = (label: string, max: number) =>
   z
@@ -24,6 +25,8 @@ export const createStaffSchema = z.strictObject({
     .regex(/^[A-Z0-9-]{2,20}$/, 'Employee number: 2–20 capital letters, digits or dashes'),
   departmentId: z.uuid(),
   designation: text('Designation', 80),
+  /** Optional work email: where password-reset links go. */
+  email: staffEmail.optional(),
   /** Optional: an employee without a login (e.g. support staff tracked by HR). */
   username: z
     .string()
@@ -36,6 +39,8 @@ export const createStaffSchema = z.strictObject({
   password: password.optional(),
   reason,
 });
+
+export const staffEmailSchema = z.strictObject({ email: staffEmail.nullable() });
 
 export const userStatusSchema = z.strictObject({ status: z.enum(['active', 'disabled']), reason });
 export const resetPasswordSchema = z.strictObject({ password, reason });
@@ -164,6 +169,8 @@ export interface StaffAccount {
   employeeNo: string;
   fullName: string;
   designation: string;
+  /** Work email (password-reset links); null if HR hasn't added one. */
+  email: string | null;
   employmentStatus: string;
   department: { id: string; name: string };
   user: { id: string; username: string; status: string; locked: boolean; roles: string[] } | null;

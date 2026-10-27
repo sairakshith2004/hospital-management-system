@@ -48,17 +48,17 @@ In this table:
 | patient:create, patient:update_demographics | ● | | ● | | | | | | | | |
 | patient:read_demographics | ● | ● | ● | ● | ● | ◐ | ◐ | ● | | | |
 | patient:read_clinical | ◐¹³ | | | ◐ | ◐ | ◐² | ◐² | | | | |
-| allergy:record (allergies and current medications) | | | | ◐ | ◐⁹ | | | | | | |
-| history:write (medical history entries) | | | | ◐ | | | | | | | |
+| allergy:record (allergies and current medications) | ◐¹³ | | | ◐ | ◐⁹ | | | | | | |
+| history:write (medical history entries) | ◐¹³ | | | ◐ | | | | | | | |
 | schedule:read | ● | ● | ● | ● | ● | | | | | | ● |
 | schedule:manage, fee:manage, nurse_assignment:manage | ● | ● | | | | | | | | | |
 | appointment:book, appointment:cancel, appointment:reschedule, appointment:check_in, appointment:mark_no_show, followup:schedule | ● | | ● | | | | | | | | |
 | appointment:read_all (every doctor's appointments and queues) | ● | ●¹² | ●¹² | | | | | | | | |
 | queue:read | ● | ● | ● | ◐¹² | ◐¹² | | | | | | |
-| encounter:write, prescription:create, prescription:cancel, lab_order:create, lab_order:cancel, followup:recommend | | | | ◐ | | | | | | | |
-| vitals:record | | | | ◐ | ◐ | | | | | | |
+| encounter:write, prescription:create, prescription:cancel, lab_order:create, lab_order:cancel, followup:recommend | ◐¹³ | | | ◐ | | | | | | | |
+| vitals:record | ◐¹³ | | | ◐ | ◐ | | | | | | |
 | medicine:search (read-only) | ● | ● | | ● | ● | ● | | | | ● | |
-| prescription:dispense, dispense:return, dispense:substitute, prescription:close | | | | | | ● | | | | | |
+| prescription:dispense, dispense:return, dispense:substitute, prescription:close | ◐¹³ | | | | | ● | | | | | |
 | medicine:catalog_manage | ● | | | | | ● | | | | ● | |
 | stock:adjust_pharmacy | ● | | | | | ◐³ | | | | | |
 | stock:adjust_store | ● | | | | | | | | | ◐³ | |
@@ -69,8 +69,8 @@ In this table:
 | stock_transfer:receive_store (accept or reject into a store; accept returns into a store) | ● | | | | | | | | | ◐³ | |
 | supplier:manage, po:create | ● | | | | | | | | | ● | |
 | po:approve | ● | ● | | | | | | | | | |
-| lab:process (including sample collection), lab_result:enter | | | | | | | ● | | | | |
-| lab_result:verify | | | | | | | ◐⁴ | | | | |
+| lab:process (including sample collection), lab_result:enter | ◐¹³ | | | | | | ● | | | | |
+| lab_result:verify | ◐⁴ ¹³ | | | | | | ◐⁴ | | | | |
 | invoice:read | ● | ● | ● | | | ◐⁵ | | ● | | | |
 | invoice:issue, invoice:discard_draft, payment:record, refund:request | ● | | ● | | | ◐⁵ | | ● | | | |
 | discount:apply (up to the threshold) | ● | | ● | | | | | ● | | | |
@@ -89,7 +89,7 @@ In this table:
 | enquiry:manage | ● | | ◐⁷ | | | | | | | | ● |
 | campaign:manage | ● | | | | | | | | | | ● |
 | report:marketing (aggregate only) | ● | ● | | | | | | | | | ● |
-| break_glass:use | | | | ● | | | | | | | |
+| break_glass:use | ◐¹³ | | | ● | | | | | | | |
 | message:send (communication hub: notices, staff messages) | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● | ● |
 | notice:publish (official notices) | ● | ● | | | | | | | ● | | |
 | call_request:create (ask a doctor for a call; note 14) | ● | ● | | ● | ● | ● | ● | | | | |
@@ -98,6 +98,7 @@ In this table:
 Notes:
 1. Account and role management (C2):
    - **New staff accounts are created by HR (2026-10-27, owner decision).** HR (`user:create`) adds a new staff member (name, employee number, department, designation) and creates their login. There is no public self sign-up. A new account still has no roles: the Super Admin assigns them. Accounts left waiting by the old sign-up can still be approved or rejected by ADM or SA.
+   - **Own passwords (2026-10-27, owner decision).** Everyone changes their own password when signed in (current password required; other sessions end). A password chosen by HR (new login) or an administrator (reset) is temporary: until the person chooses their own, the API refuses every request except changing it, `GET /api/auth/me` and signing out (`403 PASSWORD_CHANGE_REQUIRED`). A forgotten password is reset through a one-time link emailed to the work email HR keeps on the staff record (30 minutes, single use, at most 3 per hour, never revealing whether an account exists; only a fingerprint of the link is stored). HR (`user:create`) or ADM (`user:manage`) set the work email. Staff without an email on file still ask HR or Administration.
    - ADM deactivates, re-enables and resets passwords for staff accounts (`user:manage`), but not SA accounts and not their own account status. ADM no longer creates accounts. ADM can't grant or revoke roles or change role permissions.
    - **Onboarding dependency:** a new account starts with no roles, so it holds no permissions. It can log in, change its own password and log out, and every protected route returns 403 until SA assigns a role. SA's user list flags accounts awaiting role assignment. A role grant takes effect on the user's next request (AD-8).
    - SA grants and revokes users' roles and changes role permissions.
@@ -138,7 +139,7 @@ Notes:
     - `appointment:read_all` is the deliberate grant for seeing every doctor's appointments and queues. Only REC and ADM hold it. Its lists return scheduling fields and patient identifiers (MRN, name) only, never clinical data.
     - A request for another doctor's appointment or queue without `appointment:read_all` returns 404, the same as an unknown ID, so the record's existence isn't revealed. It writes an `access.denied` audit row.
     - `appointment:reschedule` is separate from `appointment:book` and `appointment:cancel`. A reschedule marks the original `rescheduled` and books the successor in one transaction; if the new slot is unavailable, nothing changes.
-13. **Super Admin as chief executive (2026-10-19, owner decision).** SA holds every permission except the clinical work that must carry a clinician's own name (`allergy:record`, `history:write`, consulting, prescribing, lab ordering, `vitals:record`, dispensing, `lab:process`, result entry and verification, `break_glass:use`), so one SA portal shows every department's dashboard and menu. `operations:oversee` (SA only) adds read-only views of the pharmacy prescription queue and the lab worklist; acting on them still needs PHA or LAB. SA can read any patient's clinical record without a care relationship; every such read is audited as `patient.clinical.read` with `access: executive`. SA still can't decide their own leave or approve their own expense, discount or refund (the same self-decision rules as everyone), and the account-management rules in note 1 are unchanged.
+13. **Super Admin as head of the hospital (2026-10-19; full access from 2026-10-27, owner decisions).** SA holds **every permission**, including clinical work (`allergy:record`, `history:write`, consulting, prescribing, lab ordering, `vitals:record`, dispensing, `lab:process`, result entry and verification, `break_glass:use`), so one SA portal shows and can act on every department. The records still name SA as the person who did the work. Consulting and prescribing still go through a doctor profile (the prescription names the prescribing doctor), so SA needs a doctor profile (Administration → Doctors) to run consultations. Lab results entered by SA must still be verified by someone else (note 4). Until 2026-10-27, SA was kept out of these clinical actions and had only `operations:oversee` (SA only), a read-only view of the pharmacy prescription queue and the lab worklist, which remains. SA can read any patient's clinical record without a care relationship; every such read is audited as `patient.clinical.read` with `access: executive`. SA still can't decide their own leave or approve their own expense, discount or refund (the same self-decision rules as everyone), and the account-management rules in note 1 are unchanged.
 14. **Communication hub (2026-10-21, owner decision).** Every role can read the notices addressed to it and message other staff (`message:send`). Only members of a conversation can read it; anyone else gets 404. Messages can't be edited or deleted. `notice:publish` (SA, ADM, HR) sends an official notice to all staff, one role, one department or one person. `call_request:create` lets medical staff and administrators ask a doctor for a call. Only the named doctor can accept or decline, nobody can call themselves, an unanswered request expires after 10 minutes, and a doctor who is off duty can only be called in an emergency. Doctors set their own availability; no permission is needed for that, only an active doctor profile. Publishing a notice and every call-request decision are audited. Messages hold free text, so staff must not put more patient detail in them than the conversation needs.
 15. **Video meetings (2026-10-21, owner decision).** `meeting:create` (SA, ADM, DOC, NUR, HR) starts a video meeting and invites people one by one or by whole role (all doctors, nurses, HR, administrators, Super Admins). An emergency meeting rings every invitee with a full-screen alert. Any member of a conversation can also start a video call with that conversation's members, so a nurse whose call request a doctor accepted can video-call that doctor. Only invitees can see or join a meeting (others get 404), at most 8 people can be in it at once, and only the host can end it for everyone. Video and audio go directly between browsers (WebRTC); the server only relays connection details between people who are both in the meeting, and nothing is recorded. Starting, joining, leaving and ending are audited. **Scheduled meetings (2026-10-27):** with `meeting:create` a meeting can also be booked up to 90 days ahead (not an emergency one); invitees see it as upcoming, it opens for joining 10 minutes before its time, the first person in starts it and everyone else is then rung, and one nobody starts within 2 hours closes as missed. Only the host can cancel it. Booking and cancelling are audited (`meeting.scheduled`, `meeting.cancelled`). A **Staff heads** invite group selects administrators, HR and Super Admins together (owner decision: heads are these roles, not a per-department field). **Large conferences (LiveKit, 2026-10-27):** when the media server is configured, up to 50 people can be in a call. The API hands out a LiveKit pass only after its own join checks, for that one meeting's room, valid 5 minutes, allowed to send audio and video but not data and without room-admin rights; ending a meeting closes the room on the server.
 

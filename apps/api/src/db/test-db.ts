@@ -12,6 +12,7 @@ import { hashPassword } from '../lib/password.js';
 import { createSession } from '../middleware/session.js';
 import type { EventHub } from '../modules/communication/event-hub.js';
 import type { Sfu } from '../modules/communication/sfu.js';
+import type { Mailer } from '../lib/mailer.js';
 import type { Database, Queryable, TxClient } from './client.js';
 import { appUrl, migrationUrl } from './db-env.js';
 
@@ -96,6 +97,7 @@ export function createTestApp(
     loginLimiter?: RequestHandler;
     events?: EventHub;
     sfu?: Sfu;
+    mailer?: Mailer;
   } = {},
 ): { app: Express; db: Database } {
   const db = transactionalDb(client);
@@ -110,7 +112,9 @@ export function createTestApp(
     db,
     session: session.middleware,
     loginLimiter: options.loginLimiter ?? ((_req, _res, next) => next()),
+    passwordLimiter: (_req, _res, next) => next(),
     events: options.events,
+    ...(options.mailer && { mailer: options.mailer }),
     ...(options.sfu && { sfu: options.sfu }),
   });
   return { app, db };

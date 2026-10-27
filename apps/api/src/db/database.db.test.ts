@@ -58,6 +58,7 @@ const HMS_APP_PRIVILEGES: Record<string, string[]> = {
   messages: ['SELECT', 'INSERT'],
   notice_reads: ['SELECT', 'INSERT'],
   notices: ['SELECT', 'INSERT'],
+  password_reset_tokens: ['SELECT', 'INSERT', 'UPDATE'],
   patients: ['SELECT', 'INSERT', 'UPDATE'],
   payments: ['SELECT', 'INSERT'],
   permissions: ['SELECT'],

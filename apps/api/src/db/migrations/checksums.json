@@ -22,5 +22,7 @@
   "0020_meetings.sql": "66e614b23ca2e7369242c3e9a9e6edeb70ade6ba3eb14cc2d2502cbe8fa7b068",
   "0021_meetings_rules.sql": "5fe3c26a68e4fc6280950f020870363d0916d9f02abd90b9064eabf20b1e2d40",
   "0022_meeting_schedule.sql": "6169bee6d70c328a302d82a920ab37fe7c5f776cf2a137612af46ceca8eead63",
-  "0023_meeting_schedule_rules.sql": "0377f42d1fcc4600568eae7fab746e48587fa82fa3ea03b93aebc01ee8c7c066"
+  "0023_meeting_schedule_rules.sql": "0377f42d1fcc4600568eae7fab746e48587fa82fa3ea03b93aebc01ee8c7c066",
+  "0024_password_self_service.sql": "226042a790f77529a39b313961571a16de3c1582a268fcd9a1c034abdd81cd9a",
+  "0025_password_self_service_rules.sql": "83134db16a20f5ea77ec6276c5c46926efe1acc5776242e1dcd75e7b4a4b0a14"
 }

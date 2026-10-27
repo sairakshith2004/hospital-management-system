@@ -24,6 +24,7 @@ function user(permissions: string[]): AuthUser {
     username: 'zz_user',
     fullName: 'Test Person',
     roles: [],
+    mustChangePassword: false,
     permissions: [],
     can: (p) => permissions.includes(p),
   };

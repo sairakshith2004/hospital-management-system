@@ -18,6 +18,12 @@ const EnvSchema = z
       .enum(['false', '1', '2', '3'], 'must be false, 1, 2 or 3')
       .default('false')
       .transform((v) => (v === 'false' ? false : Number(v))),
+    // Outgoing email for password-reset links (optional). Without it, "forgot password" can't
+    // send links and staff ask HR or Administration as before. smtp:// or smtps:// URL.
+    SMTP_URL: z.url({ protocol: /^smtps?$/ }).optional(),
+    MAIL_FROM: z.string().min(3).default('HospitalOS <no-reply@hospitalos.local>'),
+    // Where staff open the web app: the base of the links in reset emails.
+    APP_URL: z.url({ protocol: /^https?$/ }).default('http://127.0.0.1:5173'),
     // LiveKit media server for video meetings (optional). Without it, meetings fall back to
     // browser-to-browser video for up to 8 people. All three or none.
     LIVEKIT_URL: z.url({ protocol: /^wss?$/ }).optional(),

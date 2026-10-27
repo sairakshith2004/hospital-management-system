@@ -12,6 +12,7 @@ import {
   primaryKey,
   text,
   timestamp,
+  uniqueIndex,
   uuid,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
@@ -46,10 +47,19 @@ export const employees = pgTable(
       .references(() => departments.id, { onDelete: 'restrict' }),
     designation: text('designation').notNull(),
     employmentStatus: text('employment_status').notNull().default('active'),
+    /** Work email, set by HR: where password-reset links go. Optional. */
+    email: citext('email'),
     ...auditColumns(userId),
   },
   (t) => [
     index('employees_department_id_idx').on(t.departmentId),
+    uniqueIndex('employees_email_key')
+      .on(t.email)
+      .where(sql`${t.email} IS NOT NULL`),
+    check(
+      'employees_email_format',
+      sql`${t.email} IS NULL OR (length(${t.email}) <= 254 AND ${t.email} ~ '^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$')`,
+    ),
     check('employees_full_name_not_blank', sql`length(trim(${t.fullName})) > 0`),
     check('employees_employment_status_check', oneOf(t.employmentStatus, EMPLOYMENT_STATUSES)),
   ],
@@ -70,6 +80,8 @@ export const users = pgTable(
     lockedUntil: timestamp('locked_until', { withTimezone: true }),
     /** Signed up on the sign-in page and not yet approved (status stays 'disabled'). */
     pendingApproval: boolean('pending_approval').notNull().default(false),
+    /** Set when HR or an administrator chose the password: the person must pick their own. */
+    mustChangePassword: boolean('must_change_password').notNull().default(false),
     ...auditColumns(userId),
   },
   (t) => [
@@ -140,5 +152,28 @@ export const rolePermissions = pgTable(
   (t) => [
     primaryKey({ name: 'role_permissions_pkey', columns: [t.roleId, t.permissionId] }),
     index('role_permissions_permission_id_idx').on(t.permissionId),
+  ],
+);
+
+/**
+ * One-time password-reset links (forgot password). Only a SHA-256 fingerprint of the link's
+ * secret is stored, so a copy of this table can't be used to reset anyone's password.
+ */
+export const passwordResetTokens = pgTable(
+  'password_reset_tokens',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    userId: uuid('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    tokenHash: text('token_hash').notNull().unique('password_reset_tokens_token_hash_key'),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    usedAt: timestamp('used_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [
+    index('password_reset_tokens_user_id_idx').on(t.userId),
+    check('password_reset_tokens_hash_format', sql`${t.tokenHash} ~ '^[0-9a-f]{64}$'`),
+    check('password_reset_tokens_expiry_after_creation', sql`${t.expiresAt} > ${t.createdAt}`),
   ],
 );

@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { Navigate, useNavigate, useSearchParams } from 'react-router';
+import { Link, Navigate, useNavigate, useSearchParams } from 'react-router';
 import { Alert } from '../../components/ui/alert';
 import { Button } from '../../components/ui/button';
 import { Card } from '../../components/ui/card';
@@ -38,7 +38,6 @@ export function LoginPage() {
   const [username, setUsername] = useState(params.get('username') ?? '');
   const [password, setPassword] = useState('');
   const [shown, setShown] = useState(false);
-  const [showForgot, setShowForgot] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
@@ -67,6 +66,9 @@ export function LoginPage() {
     <AuthLayout title="Welcome back" subtitle="Sign in to HospitalOS with your hospital account">
       {params.get('expired') === '1' && !error && (
         <Alert tone="info">Your session has ended. Please sign in again.</Alert>
+      )}
+      {params.get('reset') === '1' && !error && (
+        <Alert tone="success">Your password has been changed. Sign in with the new one.</Alert>
       )}
       {params.get('signedOut') === '1' && !error && (
         <Alert tone="success">You have signed out.</Alert>
@@ -99,14 +101,12 @@ export function LoginPage() {
           <div className="space-y-1.5">
             <div className="flex items-center justify-between">
               <Label htmlFor="password">Password</Label>
-              <button
-                type="button"
-                onClick={() => setShowForgot((v) => !v)}
-                aria-expanded={showForgot}
+              <Link
+                to={`/forgot-password${username.trim() ? `?username=${encodeURIComponent(username.trim())}` : ''}`}
                 className="text-xs font-medium text-brand-700 hover:underline dark:text-brand-300"
               >
                 Forgot password?
-              </button>
+              </Link>
             </div>
             <div className="relative">
               <Input
@@ -126,12 +126,6 @@ export function LoginPage() {
               <PasswordToggle shown={shown} onToggle={() => setShown((v) => !v)} />
             </div>
           </div>
-          {showForgot && (
-            <Alert tone="info">
-              Passwords are reset by a hospital administrator. Ask the Administration office to set
-              a new one for you.
-            </Alert>
-          )}
           <Button type="submit" className="w-full" disabled={submitting}>
             {submitting ? 'Signing in…' : 'Sign in'}
           </Button>

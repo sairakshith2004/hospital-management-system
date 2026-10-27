@@ -169,6 +169,20 @@
       "when": 1793085449289,
       "tag": "0023_meeting_schedule_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793087217138,
+      "tag": "0024_password_self_service",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793087228411,
+      "tag": "0025_password_self_service_rules",
+      "breakpoints": true
     }
   ]
 }
