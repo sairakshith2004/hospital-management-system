@@ -96,6 +96,7 @@ describe('database schema', () => {
       'messages',
       'notice_reads',
       'notices',
+      'password_reset_tokens',
       'patients',
       'payments',
       'permissions',

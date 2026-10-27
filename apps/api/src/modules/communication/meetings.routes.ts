@@ -4,20 +4,27 @@
  * invited and who is in the meeting, and relays connection details ("signals") between two
  * people who are both in it. Nothing is recorded.
  *
- *   GET  /api/comm/meetings                  message:send  my active meetings and the last 24 h
+ *   GET  /api/comm/meetings                  message:send  my upcoming and live meetings, and the last 24 h
  *   GET  /api/comm/meetings/:id              invitees only (404 otherwise)
- *   POST /api/comm/meetings                  meeting:create  invite people and/or whole roles; audited
+ *   POST /api/comm/meetings                  meeting:create  invite people and/or whole roles, now or
+ *                                            booked ahead (scheduledFor, up to 90 days); audited
  *   POST /api/comm/conversations/:id/meeting members of the conversation; joins its live meeting
  *                                            if there is one, otherwise starts it; audited
- *   POST /api/comm/meetings/:id/join         invitees; at most MAX_IN_MEETING at once; audited
+ *   POST /api/comm/meetings/:id/join         invitees; at most MAX_IN_MEETING at once; audited. A scheduled
+ *                                            meeting opens MEETING_JOIN_EARLY_MINUTES before its time; the
+ *                                            first person in starts it, which rings everyone else
  *   POST /api/comm/meetings/:id/heartbeat    people in the meeting (every ~15 s)
  *   POST /api/comm/meetings/:id/leave        audited; the last person out ends the meeting
- *   POST /api/comm/meetings/:id/end          the host only; audited
+ *   POST /api/comm/meetings/:id/end          the host only; ends a live meeting or cancels a booked one; audited
  *   POST /api/comm/meetings/:id/signal       both sender and recipient in the meeting
  */
 import {
+  MAX_IN_CONFERENCE,
   MAX_IN_MEETING,
   MAX_MEETING_INVITEES,
+  MEETING_JOIN_EARLY_MINUTES,
+  MEETING_MAX_DAYS_AHEAD,
+  MEETING_MISSED_AFTER_MINUTES,
   MEETING_PRESENCE_SECONDS,
   meetingSchema,
   signalSchema,
@@ -29,6 +36,7 @@ import { auditContext, recordAudit } from '../../lib/audit.js';
 import { AppError } from '../../lib/errors.js';
 import { requirePermission, requireUser } from '../../middleware/auth.js';
 import type { EventHub } from './event-hub.js';
+import type { Sfu } from './sfu.js';
 
 const uuid = (value: unknown, what: string) => {
   const parsed = z.uuid().safeParse(value);
@@ -47,6 +55,9 @@ const nameOf = (col: string) =>
 /** $1 = the caller. One row per meeting the caller is invited to. */
 const MEETING_SELECT = `
   SELECT m.id, m.title, m.kind, m.status, m.created_at AS "createdAt", m.ended_at AS "endedAt",
+         m.scheduled_for AS "scheduledFor",
+         (m.status = 'scheduled'
+            AND clock_timestamp() >= m.scheduled_for - interval '${MEETING_JOIN_EARLY_MINUTES} minutes') AS "canJoin",
          m.conversation_id AS "conversationId", m.host_id AS "hostId", ${nameOf('m.host_id')} AS "hostName",
          (m.host_id = $1) AS "isHost", ${FRESH('me')} AS "present", me.joined_at AS "joinedAt",
          (SELECT json_agg(json_build_object('id', p.user_id, 'fullName', ${nameOf('p.user_id')},
@@ -57,9 +68,15 @@ const MEETING_SELECT = `
 
 /**
  * Ends meetings nobody is in any more: a meeting whose last person's heartbeat stopped
- * (closed tab, lost network), or one nobody joined within 10 minutes.
+ * (closed tab, lost network), or one nobody joined within 10 minutes; and closes booked
+ * meetings nobody started within MEETING_MISSED_AFTER_MINUTES of their time.
  */
 async function endAbandoned(db: Queryable): Promise<void> {
+  await db.query(
+    `UPDATE meetings SET status = 'ended', ended_at = now()
+      WHERE status = 'scheduled'
+        AND scheduled_for < now() - interval '${MEETING_MISSED_AFTER_MINUTES} minutes'`,
+  );
   await db.query(
     `UPDATE meetings m SET status = 'ended', ended_at = now()
       WHERE m.status = 'active'
@@ -87,6 +104,7 @@ async function createMeeting(
     hostId: string;
     userIds: string[];
     conversationId?: string;
+    scheduledFor?: string;
   },
 ): Promise<string> {
   let conversationId = input.conversationId;
@@ -102,8 +120,16 @@ async function createMeeting(
     );
   }
   const { rows } = await tx.query<{ id: string }>(
-    `INSERT INTO meetings (title, kind, host_id, conversation_id) VALUES ($1, $2, $3, $4) RETURNING id`,
-    [input.title, input.kind, input.hostId, conversationId],
+    `INSERT INTO meetings (title, kind, host_id, conversation_id, status, scheduled_for)
+     VALUES ($1, $2, $3, $4, $5, $6) RETURNING id`,
+    [
+      input.title,
+      input.kind,
+      input.hostId,
+      conversationId,
+      input.scheduledFor ? 'scheduled' : 'active',
+      input.scheduledFor ?? null,
+    ],
   );
   const id = rows[0]!.id;
   await tx.query(
@@ -113,8 +139,14 @@ async function createMeeting(
   return id;
 }
 
-export function meetingRoutes(db: Database, hub: EventHub): Router {
+/**
+ * With `sfu` (LiveKit), joining returns a pass to the media server and up to
+ * MAX_IN_CONFERENCE people can be in a call; without it, browsers connect to each other
+ * (signals relayed below) and the limit is MAX_IN_MEETING.
+ */
+export function meetingRoutes(db: Database, hub: EventHub, sfu?: Sfu): Router {
   const router = Router();
+  const maxInCall = sfu ? MAX_IN_CONFERENCE : MAX_IN_MEETING;
   const canMessage = requirePermission(db, 'message:send');
 
   const audit = (
@@ -142,11 +174,14 @@ export function meetingRoutes(db: Database, hub: EventHub): Router {
     await endAbandoned(db);
     const { rows } = await db.query(
       `${MEETING_SELECT}
-         AND (m.status = 'active' OR m.ended_at > now() - interval '24 hours')
-       ORDER BY (m.status = 'active') DESC, m.created_at DESC LIMIT 30`,
+         AND (m.status IN ('active', 'scheduled') OR m.ended_at > now() - interval '24 hours')
+       ORDER BY array_position(ARRAY['active', 'scheduled', 'ended'], m.status),
+                CASE WHEN m.status = 'scheduled' THEN m.scheduled_for END ASC,
+                m.created_at DESC
+       LIMIT 50`,
       [me],
     );
-    res.json({ meetings: rows });
+    res.json({ meetings: rows, maxInCall });
   });
 
   router.get('/comm/meetings/:id', canMessage, async (req, res) => {
@@ -161,6 +196,25 @@ export function meetingRoutes(db: Database, hub: EventHub): Router {
     const input = meetingSchema.parse(req.body);
     const me = requireUser(res).id;
     const { id, userIds } = await withTransaction(db, async (tx) => {
+      if (input.scheduledFor) {
+        const { rows: when } = await tx.query<{ past: boolean; tooFar: boolean }>(
+          `SELECT $1::timestamptz <= now() + interval '1 minute' AS past,
+                  $1::timestamptz > now() + interval '${MEETING_MAX_DAYS_AHEAD} days' AS "tooFar"`,
+          [input.scheduledFor],
+        );
+        if (when[0]!.past)
+          throw new AppError(
+            422,
+            'SCHEDULE_IN_PAST',
+            'Choose a time in the future, or start the meeting now.',
+          );
+        if (when[0]!.tooFar)
+          throw new AppError(
+            422,
+            'SCHEDULE_TOO_FAR',
+            `A meeting can be booked at most ${MEETING_MAX_DAYS_AHEAD} days ahead.`,
+          );
+      }
       const { rows } = await tx.query<{ id: string }>(
         `SELECT u.id FROM users u
           WHERE u.status = 'active' AND NOT u.pending_approval
@@ -187,11 +241,20 @@ export function meetingRoutes(db: Database, hub: EventHub): Router {
         kind: input.kind,
         hostId: me,
         userIds,
+        ...(input.scheduledFor ? { scheduledFor: input.scheduledFor } : {}),
       });
-      await audit(tx, req, res, 'meeting.started', meetingId, {
-        kind: input.kind,
-        invited: userIds.length - 1,
-      });
+      await audit(
+        tx,
+        req,
+        res,
+        input.scheduledFor ? 'meeting.scheduled' : 'meeting.started',
+        meetingId,
+        {
+          kind: input.kind,
+          invited: userIds.length - 1,
+          ...(input.scheduledFor ? { scheduledFor: input.scheduledFor } : {}),
+        },
+      );
       return { id: meetingId, userIds };
     });
     hub.send(userIds, { type: 'meeting', id });
@@ -243,25 +306,39 @@ export function meetingRoutes(db: Database, hub: EventHub): Router {
     const id = uuid(req.params.id, 'Meeting');
     const peers = await withTransaction(db, async (tx) => {
       // Locking the meeting row makes joins one at a time, so the size limit holds.
-      const { rows: m } = await tx.query<{ status: string }>(
-        `SELECT m.status FROM meetings m
+      const { rows: m } = await tx.query<{ status: string; early: boolean; missed: boolean }>(
+        `SELECT m.status,
+                clock_timestamp() < m.scheduled_for - interval '${MEETING_JOIN_EARLY_MINUTES} minutes' AS early,
+                m.scheduled_for < now() - interval '${MEETING_MISSED_AFTER_MINUTES} minutes' AS missed
+           FROM meetings m
            JOIN meeting_participants p ON p.meeting_id = m.id AND p.user_id = $2
           WHERE m.id = $1 FOR UPDATE OF m`,
         [id, me],
       );
       if (!m[0]) throw notFound();
-      if (m[0].status !== 'active')
+      if (m[0].status === 'scheduled') {
+        if (m[0].early)
+          throw new AppError(
+            409,
+            'MEETING_NOT_STARTED',
+            `This meeting opens ${MEETING_JOIN_EARLY_MINUTES} minutes before its start time.`,
+          );
+        if (m[0].missed) throw new AppError(409, 'MEETING_ENDED', 'This meeting has ended.');
+        // The first person in starts the booked meeting; everyone else is then rung.
+        await tx.query(`UPDATE meetings SET status = 'active' WHERE id = $1`, [id]);
+        await audit(tx, req, res, 'meeting.started', id, { scheduled: true });
+      } else if (m[0].status !== 'active')
         throw new AppError(409, 'MEETING_ENDED', 'This meeting has ended.');
       const { rows: present } = await tx.query<{ id: string }>(
         `SELECT p.user_id AS id FROM meeting_participants p
           WHERE p.meeting_id = $1 AND p.user_id <> $2 AND ${FRESH('p')}`,
         [id, me],
       );
-      if (present.length >= MAX_IN_MEETING)
+      if (present.length >= maxInCall)
         throw new AppError(
           409,
           'MEETING_FULL',
-          `This meeting already has ${MAX_IN_MEETING} people in it.`,
+          `This meeting already has ${maxInCall} people in it.`,
         );
       await tx.query(
         `UPDATE meeting_participants
@@ -274,7 +351,12 @@ export function meetingRoutes(db: Database, hub: EventHub): Router {
       return present.map((p) => p.id);
     });
     hub.send(await participantIds(db, id), { type: 'meeting', id });
-    res.json({ peers });
+    if (!sfu) {
+      res.json({ peers });
+      return;
+    }
+    const user = requireUser(res);
+    res.json({ peers, sfu: { url: sfu.url, token: await sfu.token(id, me, user.fullName) } });
   });
 
   router.post('/comm/meetings/:id/heartbeat', canMessage, async (req, res) => {
@@ -334,11 +416,16 @@ export function meetingRoutes(db: Database, hub: EventHub): Router {
       if (!rows[0]) throw notFound();
       if (rows[0].hostId !== me)
         throw new AppError(403, 'NOT_HOST', 'Only the person who started the meeting can end it.');
-      if (rows[0].status !== 'active') return;
+      if (rows[0].status === 'ended') return;
+      const cancelling = rows[0].status === 'scheduled';
       await tx.query(
         `UPDATE meetings SET status = 'ended', ended_at = now(), ended_by = $2 WHERE id = $1`,
         [id, me],
       );
+      if (cancelling) {
+        await audit(tx, req, res, 'meeting.cancelled', id);
+        return;
+      }
       await tx.query(
         `UPDATE meeting_participants SET present = false, left_at = clock_timestamp()
           WHERE meeting_id = $1 AND present`,
@@ -346,6 +433,7 @@ export function meetingRoutes(db: Database, hub: EventHub): Router {
       );
       await audit(tx, req, res, 'meeting.ended', id);
     });
+    await sfu?.closeRoom(id);
     hub.send(await participantIds(db, id), { type: 'meeting', id });
     res.json({ ok: true });
   });

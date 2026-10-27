@@ -17,7 +17,12 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
  */
 // Sign-in and sign-up have no session yet; both require a JSON body, which a cross-site
 // HTML form can't send.
-const EXEMPT_PATHS = new Set(['/api/auth/login', '/api/auth/signup']);
+const EXEMPT_PATHS = new Set([
+  '/api/auth/login',
+  // Public, JSON-only and without a session: nothing a forged request could ride on.
+  '/api/auth/password/forgot',
+  '/api/auth/password/reset',
+]);
 
 export function newCsrfToken(): string {
   return randomBytes(32).toString('base64url');

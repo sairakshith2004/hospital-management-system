@@ -155,6 +155,34 @@
       "when": 1792559977952,
       "tag": "0021_meetings_rules",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1793085440916,
+      "tag": "0022_meeting_schedule",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1793085449289,
+      "tag": "0023_meeting_schedule_rules",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1793087217138,
+      "tag": "0024_password_self_service",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1793087228411,
+      "tag": "0025_password_self_service_rules",
+      "breakpoints": true
     }
   ]
 }

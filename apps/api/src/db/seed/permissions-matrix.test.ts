@@ -74,9 +74,9 @@ describe('permissions', () => {
     for (const role of ROLE_CODES) expect(ROLE_PERMISSIONS[role]).toContain('leave:request');
   });
 
-  it('gives SA everything except clinical work, which needs a clinician (note 13)', () => {
-    for (const code of CLINICAL_WORK_PERMISSIONS) expect(ROLE_PERMISSIONS.SA).not.toContain(code);
-    expect(ROLE_PERMISSIONS.SA.length).toBe(codes.length - CLINICAL_WORK_PERMISSIONS.length);
+  it('gives SA, the head of the hospital, every permission including clinical work (note 13)', () => {
+    expect(ROLE_PERMISSIONS.SA).toEqual(codes);
+    for (const code of CLINICAL_WORK_PERMISSIONS) expect(ROLE_PERMISSIONS.SA).toContain(code);
     for (const code of [
       'patient:read_clinical',
       'leave:approve',

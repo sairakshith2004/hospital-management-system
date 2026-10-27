@@ -20,7 +20,7 @@ const opens = (p: Portal, roles: readonly string[]) =>
  * see and do inside is decided by the server from the account's roles.
  */
 export function PortalsPage() {
-  const { user, logout } = useAuth();
+  const { user, logout, can } = useAuth();
   const navigate = useNavigate();
   const [params] = useSearchParams();
   const next = safeNext(params.get('next'));
@@ -68,6 +68,30 @@ export function PortalsPage() {
           <p className="mt-1 text-sm text-slate-600 dark:text-slate-400">Choose your portal</p>
         </div>
         {error && <Alert tone="error">{error}</Alert>}
+        {can('user:create') && (
+          // HR (and the Super Admin) onboard new staff: straight to the new-member form.
+          <button
+            type="button"
+            onClick={() => navigate('/admin/staff?add=1', { replace: true })}
+            className="flex w-full items-center gap-4 rounded-xl border-2 border-brand-300 bg-brand-50 p-4 text-left shadow-sm transition hover:-translate-y-0.5 hover:border-brand-500 hover:shadow-md dark:border-brand-700 dark:bg-brand-950"
+          >
+            <span
+              aria-hidden="true"
+              className="inline-flex size-11 shrink-0 items-center justify-center rounded-lg bg-brand-600 text-2xl font-bold text-white"
+            >
+              +
+            </span>
+            <span className="min-w-0">
+              <span className="block font-semibold text-brand-900 dark:text-white">
+                Add new staff member
+              </span>
+              <span className="block text-xs text-slate-600 dark:text-slate-300">
+                Create the account for someone joining the hospital, with their department and
+                designation. The Super Admin then gives them access.
+              </span>
+            </span>
+          </button>
+        )}
         <nav aria-label="Portals">
           <ul className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {cards.map((p) => {

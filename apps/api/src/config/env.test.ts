@@ -18,7 +18,32 @@ describe('loadEnv', () => {
       LOG_LEVEL: 'info',
       SESSION_SECRET: SECRET,
       TRUST_PROXY: false,
+      MAIL_FROM: 'HospitalOS <no-reply@hospitalos.local>',
+      APP_URL: 'http://127.0.0.1:5173',
     });
+  });
+
+  it('accepts an SMTP URL for reset emails, and refuses other schemes', () => {
+    expect(loadEnv({ ...valid, SMTP_URL: 'smtp://127.0.0.1:1025' }).SMTP_URL).toBe(
+      'smtp://127.0.0.1:1025',
+    );
+    expect(() => loadEnv({ ...valid, SMTP_URL: 'http://mail.example' })).toThrow('SMTP_URL');
+  });
+
+  it('accepts LiveKit settings only all together', () => {
+    const lk = {
+      LIVEKIT_URL: 'ws://127.0.0.1:7880',
+      LIVEKIT_API_KEY: 'zzkey',
+      LIVEKIT_API_SECRET: 'b'.repeat(40),
+    };
+    expect(loadEnv({ ...valid, ...lk }).LIVEKIT_URL).toBe(lk.LIVEKIT_URL);
+    expect(() => loadEnv({ ...valid, LIVEKIT_URL: lk.LIVEKIT_URL })).toThrow('LIVEKIT_URL');
+    expect(() => loadEnv({ ...valid, ...lk, LIVEKIT_API_SECRET: 'short' })).toThrow(
+      'LIVEKIT_API_SECRET',
+    );
+    expect(() => loadEnv({ ...valid, ...lk, LIVEKIT_URL: 'http://127.0.0.1:7880' })).toThrow(
+      'LIVEKIT_URL',
+    );
   });
 
   it('accepts an explicit log level', () => {

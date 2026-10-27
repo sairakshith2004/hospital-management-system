@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { ROLE_PERMISSIONS } from '@hospitalos/shared';
 import { describe, expect, it } from 'vitest';
 import { act } from 'react';
 import { apiFetch, hasCsrfToken } from './lib/api';
@@ -92,34 +93,15 @@ describe('login page (real API contract)', () => {
     expect(screen.queryByRole('navigation', { name: 'Portals' })).toBeNull();
   });
 
-  it('links to Create account, which explains that an administrator approves it', async () => {
-    fakeApi({
-      'GET /api/auth/me': signedOut,
-      'GET /api/auth/signup/departments': () =>
-        json(200, {
-          departments: [{ id: '00000000-0000-4000-8000-000000000001', name: 'Zz Dept' }],
-        }),
-      'POST /api/auth/signup': () => json(201, { status: 'pending' }),
-    });
+  it('has no self sign-up: new staff are told HR creates their account', async () => {
+    fakeApi({ 'GET /api/auth/me': signedOut });
     const { router } = renderApp('/login');
-    fireEvent.click(await screen.findByRole('link', { name: 'Create an account' }));
-    expect(await screen.findByRole('heading', { name: 'Create your account' })).toBeTruthy();
-    expect(router.state.location.pathname).toBe('/signup');
-    await screen.findByRole('option', { name: 'Zz Dept' });
-    fireEvent.change(screen.getByLabelText('Full name'), { target: { value: 'Zz New' } });
-    fireEvent.change(screen.getByLabelText('Username'), { target: { value: 'zz.new' } });
-    fireEvent.change(screen.getByLabelText('Department'), {
-      target: { value: '00000000-0000-4000-8000-000000000001' },
-    });
-    fireEvent.change(screen.getByLabelText('Job title'), { target: { value: 'Nurse' } });
-    fireEvent.change(screen.getByLabelText('Password'), { target: { value: 'long-enough-pass' } });
-    fireEvent.change(screen.getByLabelText('Confirm password'), {
-      target: { value: 'long-enough-pass' },
-    });
-    fireEvent.click(screen.getByRole('button', { name: 'Create account' }));
-    expect(await screen.findByText(/A hospital administrator will approve it/)).toBeTruthy();
-    expect(router.state.location.pathname).toBe('/login');
-    expect((screen.getByLabelText('Username') as HTMLInputElement).value).toBe('zz.new');
+    expect(await screen.findByText(/created by the/)).toBeTruthy();
+    expect(screen.getByText('HR department')).toBeTruthy();
+    expect(screen.queryByRole('link', { name: 'Create an account' })).toBeNull();
+    // The old sign-up address is just another signed-out page now: back to sign-in.
+    await router.navigate('/signup');
+    await waitFor(() => expect(router.state.location.pathname).toBe('/login'));
   });
 
   it('tells a signed-up account that is still waiting for approval', async () => {
@@ -186,6 +168,32 @@ describe('login page (real API contract)', () => {
     expect(card('Reception').disabled).toBe(false);
     for (const other of ['Doctor', 'Pharmacy', 'Laboratory', 'Administration'])
       expect(card(other).disabled).toBe(true);
+  });
+
+  it('takes HR straight from sign-in to the Add staff member form', async () => {
+    const hr = makeUser({ roles: ['HR'], permissions: [...ROLE_PERMISSIONS.HR] });
+    fakeApi({
+      'GET /api/auth/me': signedOut,
+      'POST /api/auth/login': () => json(200, session(hr)),
+      'GET /api/admin/staff': () => json(200, { staff: [] }),
+      'GET /api/departments': () => json(200, { departments: [] }),
+    });
+    const { router } = renderApp('/login');
+    await fillAndSubmit('zz_hr', 'synthetic-password');
+    fireEvent.click(await screen.findByRole('button', { name: /^Add new staff member/ }));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/admin/staff'));
+    expect(await screen.findByLabelText(/Full name/)).toBeTruthy();
+  });
+
+  it('shows the Add staff member shortcut only to accounts that can create staff', async () => {
+    fakeApi({
+      'GET /api/auth/me': signedOut,
+      'POST /api/auth/login': () => json(200, session()),
+    });
+    renderApp('/login');
+    await fillAndSubmit('zz_reception', 'synthetic-password');
+    await screen.findByRole('navigation', { name: 'Portals' });
+    expect(screen.queryByRole('button', { name: /^Add new staff member/ })).toBeNull();
   });
 
   it('lets an account without a department use the Other staff card', async () => {
@@ -273,5 +281,110 @@ describe('signed-in shell', () => {
     const { router } = renderApp('/login');
     await screen.findByRole('navigation', { name: 'Portals' });
     expect(router.state.location.pathname).toBe('/portals');
+  });
+});
+
+describe('own password', () => {
+  it('sends someone with an HR-chosen password to choose their own first', async () => {
+    const api = fakeApi({
+      'GET /api/auth/me': signedOut,
+      'POST /api/auth/login': () => json(200, session(makeUser({ mustChangePassword: true }))),
+      'POST /api/auth/password/change': () => json(200, { ok: true }),
+    });
+    const { router } = renderApp('/login');
+    await fillAndSubmit('zz_reception', 'synthetic-password');
+    expect(await screen.findByRole('heading', { name: 'Choose your own password' })).toBeTruthy();
+    expect(router.state.location.pathname).toBe('/account/password');
+    // Trying to go elsewhere comes straight back.
+    await act(() => router.navigate('/patients'));
+    await waitFor(() => expect(router.state.location.pathname).toBe('/account/password'));
+
+    fireEvent.change(screen.getByLabelText('Password you were given'), {
+      target: { value: 'synthetic-password' },
+    });
+    fireEvent.change(screen.getByLabelText(/New password/), { target: { value: 'short' } });
+    fireEvent.change(screen.getByLabelText('Confirm new password'), { target: { value: 'short' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Change password' }));
+    expect(await screen.findByText('Use at least 12 characters.')).toBeTruthy();
+    expect(api.calls.some((c) => c.key === 'POST /api/auth/password/change')).toBe(false);
+  });
+
+  it('asks for a reset link and gives the same answer whatever account is typed', async () => {
+    const api = fakeApi({
+      'GET /api/auth/me': signedOut,
+      'POST /api/auth/password/forgot': () => json(202, { ok: true }),
+    });
+    renderApp('/login');
+    fireEvent.change(await screen.findByLabelText('Username'), {
+      target: { value: 'zz_nurse' },
+    });
+    fireEvent.click(screen.getByRole('link', { name: 'Forgot password?' }));
+    const field = (await screen.findByLabelText('Username or work email')) as HTMLInputElement;
+    expect(field.value).toBe('zz_nurse');
+    fireEvent.click(screen.getByRole('button', { name: 'Email me a reset link' }));
+    expect(await screen.findByText(/If that account has a work email on file/)).toBeTruthy();
+    const sent = api.calls.find((c) => c.key === 'POST /api/auth/password/forgot')!;
+    expect(JSON.parse(String(sent.init.body))).toEqual({ identifier: 'zz_nurse' });
+  });
+
+  it('sets a new password from the emailed link, then asks to sign in', async () => {
+    const api = fakeApi({
+      'GET /api/auth/me': signedOut,
+      'POST /api/auth/password/reset': () => json(200, { ok: true }),
+    });
+    const token = 'A'.repeat(43);
+    const { router } = renderApp(`/reset-password?token=${token}`);
+    fireEvent.change(await screen.findByLabelText(/New password/), {
+      target: { value: 'my-own-new-password' },
+    });
+    fireEvent.change(screen.getByLabelText('Confirm new password'), {
+      target: { value: 'my-own-new-password' },
+    });
+    fireEvent.click(screen.getByRole('button', { name: 'Set new password' }));
+    expect(await screen.findByText(/Your password has been changed/)).toBeTruthy();
+    expect(router.state.location.pathname).toBe('/login');
+    const sent = api.calls.find((c) => c.key === 'POST /api/auth/password/reset')!;
+    expect(JSON.parse(String(sent.init.body))).toEqual({ token, password: 'my-own-new-password' });
+  });
+});
+
+describe('HR adds a staff member', () => {
+  it('creates their login by default, so they can sign in', async () => {
+    const hr = makeUser({ roles: ['HR'], permissions: [...ROLE_PERMISSIONS.HR] });
+    const dept = '00000000-0000-4000-8000-0000000000d1';
+    const api = fakeApi({
+      'GET /api/auth/me': () => json(200, session(hr)),
+      'GET /api/admin/staff': () => json(200, { staff: [] }),
+      'GET /api/departments': () =>
+        json(200, { departments: [{ id: dept, code: 'ZZ', name: 'Zz Ward', active: true }] }),
+      'POST /api/admin/staff': () => json(201, { employeeId: 'e1' }),
+    });
+    renderApp('/admin/staff?add=1');
+    fireEvent.change(await screen.findByLabelText(/Full name/), { target: { value: 'Zz New' } });
+    fireEvent.change(screen.getByLabelText(/Employee no/), { target: { value: 'ZZ-1' } });
+    await screen.findByRole('option', { name: 'Zz Ward' });
+    fireEvent.change(screen.getByLabelText(/Department/), { target: { value: dept } });
+    fireEvent.change(screen.getByLabelText(/Designation/), { target: { value: 'Helper' } });
+    const add = screen.getByRole('button', { name: 'Add and create login' }) as HTMLButtonElement;
+    // No username and password yet: can't add (that used to save someone who couldn't sign in).
+    expect(add.disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText(/Username for signing in/), {
+      target: { value: '_bad' },
+    });
+    expect(await screen.findByText(/starting with a letter/)).toBeTruthy();
+    fireEvent.change(screen.getByLabelText(/Username for signing in/), {
+      target: { value: 'zz.new' },
+    });
+    fireEvent.change(screen.getByLabelText(/First password/), {
+      target: { value: 'long-enough-pass' },
+    });
+    expect(add.disabled).toBe(false);
+    fireEvent.click(add);
+    expect(await screen.findByText(/They sign in as “zz.new”/)).toBeTruthy();
+    const sent = api.calls.find((c) => c.key === 'POST /api/admin/staff')!;
+    expect(JSON.parse(String(sent.init.body))).toMatchObject({
+      username: 'zz.new',
+      password: 'long-enough-pass',
+    });
   });
 });

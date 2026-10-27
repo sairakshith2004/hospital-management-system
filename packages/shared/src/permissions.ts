@@ -10,7 +10,11 @@ import type { RoleCode } from './index.js';
 export const PERMISSIONS = [
   {
     code: 'user:manage',
-    description: 'Create, deactivate and reset passwords of staff accounts (no role changes)',
+    description: 'Deactivate, re-enable and reset passwords of staff accounts (no role changes)',
+  },
+  {
+    code: 'user:create',
+    description: 'Add new staff members and create their logins (no roles; HR onboarding)',
   },
   { code: 'user_role:assign', description: "Grant or revoke a user's roles" },
   { code: 'role:manage', description: 'Manage role definitions and role-permission assignments' },
@@ -161,10 +165,11 @@ export const ROLE_NAMES: Record<RoleCode, string> = {
 
 /** Which permissions each role grants (● and ◐ cells of the matrix), in matrix order. */
 /**
- * Clinical work that must carry a clinician's own name (consulting, prescribing, recording
- * vitals and history, lab processing and results, dispensing, emergency access). Everyone
- * else's work can be overseen by the Super Admin, but these actions need a professional
- * account, so the Super Admin does not hold them.
+ * Clinical work (consulting, prescribing, recording vitals and history, lab processing and
+ * results, dispensing, emergency access). Until 2026-10-27 the Super Admin was kept out of
+ * these; now the Super Admin holds them too (owner decision, docs/permissions.md note 13).
+ * The records still name who did the work, consulting and prescribing still need a doctor
+ * profile, and lab results are still verified by a different person.
  */
 export const CLINICAL_WORK_PERMISSIONS = [
   'allergy:record',
@@ -187,12 +192,10 @@ export const CLINICAL_WORK_PERMISSIONS = [
 ] as const satisfies readonly PermissionCode[];
 
 /**
- * The Super Admin runs the hospital like a CEO: every permission except clinical work, in
- * matrix order. Clinical records are readable for any patient (every read audited).
+ * The Super Admin is the head of the hospital: every permission, in matrix order (owner
+ * decision 2026-10-27). Clinical records are readable for any patient (every read audited).
  */
-const SUPER_ADMIN_PERMISSIONS: readonly PermissionCode[] = PERMISSIONS.map((p) => p.code).filter(
-  (code) => !(CLINICAL_WORK_PERMISSIONS as readonly string[]).includes(code),
-);
+const SUPER_ADMIN_PERMISSIONS: readonly PermissionCode[] = PERMISSIONS.map((p) => p.code);
 
 export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
   SA: SUPER_ADMIN_PERMISSIONS,
@@ -335,6 +338,7 @@ export const ROLE_PERMISSIONS: Record<RoleCode, readonly PermissionCode[]> = {
     'message:send',
   ],
   HR: [
+    'user:create',
     'employee:read',
     'employee:manage',
     'attendance:manage',

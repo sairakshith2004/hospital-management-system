@@ -1,7 +1,8 @@
 /**
  *   GET  /api/admin/staff                         user:manage | user_role:assign | employee:read
- *   POST /api/admin/staff                         user:manage   (employee, optional login; no roles yet)
- *   POST /api/admin/staff/:employeeId/login       user:manage
+ *   POST /api/admin/staff                         user:create   (HR: employee, optional login; no roles yet)
+ *   POST /api/admin/staff/:employeeId/login       user:create
+ *   POST /api/admin/staff/:employeeId/email       user:create | user:manage (work email for reset links)
  *   POST /api/admin/users/:id/status              user:manage   (not self; ADM never on SA)
  *   POST /api/admin/users/:id/password            user:manage   (ends the user's sessions)
  *   POST /api/admin/users/:id/roles/grant|revoke  user_role:assign (not self; last SA kept)
@@ -21,6 +22,7 @@ import {
   SETTINGS,
   auditSearchSchema,
   createStaffSchema,
+  staffEmailSchema,
   departmentSchema,
   doctorFeeSchema,
   doctorProfileSchema,
@@ -47,6 +49,7 @@ import {
   createDoctorProfile,
   createLogin,
   createStaff,
+  setStaffEmail,
   removeScheduleException,
   resetPassword,
   setUserStatus,
@@ -72,6 +75,7 @@ export function adminRoutes(db: Database): Router {
     async (_req, res) => {
       const { rows } = await db.query<StaffAccount>(
         `SELECT e.id AS "employeeId", e.employee_no AS "employeeNo", e.full_name AS "fullName", e.designation,
+              e.email::text AS email,
               e.employment_status AS "employmentStatus",
               json_build_object('id', d.id, 'name', d.name) AS department,
               CASE WHEN u.id IS NULL THEN NULL ELSE json_build_object(
@@ -89,7 +93,7 @@ export function adminRoutes(db: Database): Router {
       res.json({ staff: rows });
     },
   );
-  router.post('/admin/staff', requirePermission(db, 'user:manage'), async (req, res) => {
+  router.post('/admin/staff', requirePermission(db, 'user:create'), async (req, res) => {
     const input = createStaffSchema.parse(req.body);
     res
       .status(201)
@@ -97,7 +101,7 @@ export function adminRoutes(db: Database): Router {
   });
   router.post(
     '/admin/staff/:employeeId/login',
-    requirePermission(db, 'user:manage'),
+    requirePermission(db, 'user:create'),
     async (req, res) => {
       const input = z
         .strictObject({
@@ -118,6 +122,21 @@ export function adminRoutes(db: Database): Router {
           auditContext(req, res),
         ),
       });
+    },
+  );
+  router.post(
+    '/admin/staff/:employeeId/email',
+    requireAnyPermission(db, ['user:create', 'user:manage']),
+    async (req, res) => {
+      const { email } = staffEmailSchema.parse(req.body);
+      await setStaffEmail(
+        db,
+        uuid(req.params.employeeId, 'Employee'),
+        email,
+        actorOf(res),
+        auditContext(req, res),
+      );
+      res.json({ ok: true });
     },
   );
   router.post('/admin/users/:id/status', requirePermission(db, 'user:manage'), async (req, res) => {

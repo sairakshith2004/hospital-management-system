@@ -1,7 +1,8 @@
 /**
  * Staff accounts and role assignment (docs/permissions.md note 1):
  *   - nobody changes their own status or roles;
- *   - ADM (user:manage) manages staff accounts but never SA accounts;
+ *   - HR (user:create) adds new staff and creates their logins; there is no self sign-up;
+ *   - ADM (user:manage) disables, re-enables and resets passwords, but never on SA accounts;
  *   - only user_role:assign (SA) grants or revokes roles, and the last active SA can't be
  *     removed or disabled;
  *   - a new account has no roles until one is assigned;
@@ -86,6 +87,7 @@ export async function createStaff(
     employeeNo: string;
     departmentId: string;
     designation: string;
+    email?: string | undefined;
     username?: string | undefined;
     password?: string | undefined;
     reason: string;
@@ -104,9 +106,16 @@ export async function createStaff(
       ]);
       if (!dept.rowCount) throw new AppError(422, 'UNKNOWN_DEPARTMENT', 'Department not found.');
       const { rows: emp } = await tx.query<{ id: string }>(
-        `INSERT INTO employees (employee_no, full_name, department_id, designation, created_by, updated_by)
-         VALUES ($1, $2, $3, $4, $5, $5) RETURNING id`,
-        [input.employeeNo, input.fullName, input.departmentId, input.designation, actor.userId],
+        `INSERT INTO employees (employee_no, full_name, department_id, designation, email, created_by, updated_by)
+         VALUES ($1, $2, $3, $4, $5, $6, $6) RETURNING id`,
+        [
+          input.employeeNo,
+          input.fullName,
+          input.departmentId,
+          input.designation,
+          input.email ?? null,
+          actor.userId,
+        ],
       );
       await audit(tx, actor, context, {
         action: 'employee.created',
@@ -116,7 +125,9 @@ export async function createStaff(
       });
       if (input.username && hash) {
         const { rows: u } = await tx.query<{ id: string }>(
-          'INSERT INTO users (employee_id, username, password_hash, created_by, updated_by) VALUES ($1, $2, $3, $4, $4) RETURNING id',
+          // HR chose this password, so the person must pick their own at first sign-in.
+          `INSERT INTO users (employee_id, username, password_hash, must_change_password, created_by, updated_by)
+           VALUES ($1, $2, $3, true, $4, $4) RETURNING id`,
           [emp[0]!.id, input.username, hash, actor.userId],
         );
         await audit(tx, actor, context, {
@@ -136,7 +147,9 @@ export async function createStaff(
         'DUPLICATE',
         e.constraint?.includes('username')
           ? 'This username is taken.'
-          : 'This employee number is taken.',
+          : e.constraint?.includes('email')
+            ? 'Another staff member already has this email.'
+            : 'This employee number is taken.',
       );
     }
     throw err;
@@ -155,8 +168,8 @@ export async function createLogin(
   try {
     return await withTransaction(db, async (tx) => {
       const { rows } = await tx.query<{ id: string }>(
-        `INSERT INTO users (employee_id, username, password_hash, created_by, updated_by)
-         SELECT id, $2, $3, $4, $4 FROM employees WHERE id = $1 AND employment_status <> 'exited' RETURNING id`,
+        `INSERT INTO users (employee_id, username, password_hash, must_change_password, created_by, updated_by)
+         SELECT id, $2, $3, true, $4, $4 FROM employees WHERE id = $1 AND employment_status <> 'exited' RETURNING id`,
         [employeeId, input.username, hash, actor.userId],
       );
       if (!rows[0]) throw new AppError(404, 'NOT_FOUND', 'Employee not found');
@@ -228,7 +241,9 @@ export async function resetPassword(
     await lockUser(tx, userId);
     await guardTarget(tx, actor, userId);
     await tx.query(
-      'UPDATE users SET password_hash = $2, failed_logins = 0, locked_until = NULL, updated_by = $3 WHERE id = $1',
+      // An administrator chose this password, so the person must pick their own next time.
+      `UPDATE users SET password_hash = $2, must_change_password = true, failed_logins = 0,
+              locked_until = NULL, updated_by = $3 WHERE id = $1`,
       [userId, hash, actor.userId],
     );
     await endSessions(tx, userId);
@@ -487,4 +502,34 @@ export async function changeSetting(
       changes: { from: rows[0]?.old ?? null, to: String(value) },
     });
   });
+}
+
+/** HR sets or clears a staff member's work email (where password-reset links go). */
+export async function setStaffEmail(
+  db: Database,
+  employeeId: string,
+  email: string | null,
+  actor: Actor,
+  context: AuditContext,
+) {
+  try {
+    await withTransaction(db, async (tx) => {
+      const { rowCount } = await tx.query(
+        'UPDATE employees SET email = $2, updated_by = $3 WHERE id = $1',
+        [employeeId, email, actor.userId],
+      );
+      if (!rowCount) throw new AppError(404, 'NOT_FOUND', 'Employee not found');
+      await audit(tx, actor, context, {
+        action: 'employee.email_changed',
+        entityType: 'employee',
+        entityId: employeeId,
+        reason: email === null ? 'Work email removed' : 'Work email set',
+        changes: { field: 'email', cleared: email === null },
+      });
+    });
+  } catch (err) {
+    if (pg(err).code === '23505')
+      throw new AppError(409, 'DUPLICATE', 'Another staff member already has this email.');
+    throw err;
+  }
 }

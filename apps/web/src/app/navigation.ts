@@ -10,6 +10,8 @@ export interface NavItem {
    * Display only: the API enforces access on every request.
    */
   anyOf: PermissionCode[] | null;
+  /** Hidden when the user holds any of these (a wider page already covers it). */
+  noneOf?: PermissionCode[];
 }
 
 export const NAV_SECTIONS = [
@@ -58,18 +60,22 @@ export const NAV_ITEMS: NavItem[] = [
   },
   { label: 'Follow-ups', path: '/follow-ups', section: 'Front desk', anyOf: ['followup:schedule'] },
   { label: 'Doctors', path: '/doctors', section: 'Front desk', anyOf: ['schedule:read'] },
-  // Doctors only (encounter:write): the API limits these to their own appointments and fees.
+  // A doctor's own pages (encounter:write): the API limits these to their own appointments
+  // and fees. The Super Admin, who also holds encounter:write, uses the hospital-wide
+  // Appointments and Doctor earnings pages instead.
   {
     label: 'My appointments',
     path: '/appointments',
     section: 'Clinical',
     anyOf: ['encounter:write'],
+    noneOf: ['appointment:read_all'],
   },
   {
     label: 'My earnings',
     path: '/reports/doctor-earnings',
     section: 'Clinical',
     anyOf: ['encounter:write'],
+    noneOf: ['report:finance'],
   },
   { label: 'Medicines', path: '/medicines', section: 'Clinical', anyOf: ['medicine:search'] },
   {
@@ -141,7 +147,7 @@ export const NAV_ITEMS: NavItem[] = [
     label: 'Staff',
     path: '/admin/staff',
     section: 'People',
-    anyOf: ['user:manage', 'user_role:assign', 'employee:read'],
+    anyOf: ['user:create', 'user:manage', 'user_role:assign', 'employee:read'],
   },
   { label: 'Attendance', path: '/hr/attendance', section: 'People', anyOf: ['attendance:manage'] },
   {
@@ -206,7 +212,11 @@ export function visibleNavItems(
   can: (permission: PermissionCode) => boolean,
   items: NavItem[] = NAV_ITEMS,
 ): NavItem[] {
-  return items.filter((item) => item.anyOf === null || item.anyOf.some((p) => can(p)));
+  return items.filter(
+    (item) =>
+      (item.anyOf === null || item.anyOf.some((p) => can(p))) &&
+      !(item.noneOf ?? []).some((p) => can(p)),
+  );
 }
 
 /** Visible items grouped by section, in section order; empty sections are dropped. */

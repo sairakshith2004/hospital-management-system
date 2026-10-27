@@ -86,6 +86,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       can: (permission: PermissionCode) => granted.has(permission),
       retry: () => void session.refetch(),
+      refresh: async () => {
+        await session.refetch();
+      },
     };
   }, [session, endReason, login, logout]);
 

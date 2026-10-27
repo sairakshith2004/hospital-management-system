@@ -71,7 +71,8 @@ describe('one app, a sidebar per role', () => {
     ['HR', ['Staff', 'Attendance', 'Leave'], ['Patients', 'Invoices']],
     ['MKT', ['Enquiries', 'Campaigns', 'Leave'], ['Patients', 'Queue', 'Prescriptions']],
     [
-      // The Super Admin is the CEO: every department in one portal, but not a doctor's own pages.
+      // The Super Admin heads the hospital: every department in one portal, clinical work
+      // included, using the hospital-wide pages rather than a doctor's own ones.
       'SA',
       [
         'Patients',
@@ -92,6 +93,8 @@ describe('one app, a sidebar per role', () => {
         'Campaigns',
         'Settings',
         'Audit log',
+        'Medicines',
+        'Doctors and schedules',
       ],
       ['My appointments', 'My earnings'],
     ],

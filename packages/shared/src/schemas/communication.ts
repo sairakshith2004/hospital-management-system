@@ -112,15 +112,26 @@ export interface CommSummary {
 // ---- Video meetings (Phase C2) ----
 
 export const MEETING_KINDS = ['standard', 'emergency'] as const;
-export const MEETING_STATUSES = ['active', 'ended'] as const;
+export const MEETING_STATUSES = ['scheduled', 'active', 'ended'] as const;
 export type MeetingKind = (typeof MEETING_KINDS)[number];
 /** Browser-to-browser (mesh) video stays usable up to about this many people at once. */
 export const MAX_IN_MEETING = 8;
+/** With the LiveKit media server, each browser sends its video once, so calls can be larger. */
+export const MAX_IN_CONFERENCE = 50;
 export const MAX_MEETING_INVITEES = 100;
 /** A participant who hasn't sent a heartbeat for this long counts as gone. */
 export const MEETING_PRESENCE_SECONDS = 45;
 /** Roles that can be invited as a whole group ("all doctors", "HR", "administration"). */
 export const MEETING_INVITE_ROLES = ['DOC', 'NUR', 'HR', 'ADM', 'SA'] as const;
+
+/** "Staff heads" for a conference: administration, HR and the Super Admin (owner decision 2026-10-27). */
+export const STAFF_HEAD_ROLES = ['ADM', 'HR', 'SA'] as const;
+/** A scheduled meeting can be joined this many minutes before its start time. */
+export const MEETING_JOIN_EARLY_MINUTES = 10;
+/** A scheduled meeting nobody has started this long after its time is closed as missed. */
+export const MEETING_MISSED_AFTER_MINUTES = 120;
+/** How far ahead a meeting can be booked. */
+export const MEETING_MAX_DAYS_AHEAD = 90;
 
 export const meetingSchema = z
   .strictObject({
@@ -128,10 +139,16 @@ export const meetingSchema = z
     kind: z.enum(MEETING_KINDS).default('standard'),
     inviteeIds: z.array(z.uuid()).max(MAX_MEETING_INVITEES).default([]),
     inviteRoles: z.array(z.enum(MEETING_INVITE_ROLES)).max(MEETING_INVITE_ROLES.length).default([]),
+    /** Book for later (ISO date-time with offset); omit to start now. */
+    scheduledFor: z.iso.datetime({ offset: true }).optional(),
   })
   .refine((m) => m.inviteeIds.length > 0 || m.inviteRoles.length > 0, {
     path: ['inviteeIds'],
     message: 'Invite at least one person or group',
+  })
+  .refine((m) => !(m.kind === 'emergency' && m.scheduledFor), {
+    path: ['scheduledFor'],
+    message: 'An emergency meeting starts now and cannot be scheduled',
   });
 export type MeetingInput = z.input<typeof meetingSchema>;
 

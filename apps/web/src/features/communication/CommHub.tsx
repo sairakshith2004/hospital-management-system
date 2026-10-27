@@ -11,7 +11,9 @@ import { useApi } from '../../lib/use-api';
 import { cn } from '../../lib/utils';
 import { useAuth } from '../auth/auth-context';
 import { CallsTab } from './CallsTab';
+import { apiFetch } from '../../lib/api';
 import { COMM, playChime, useCommEvents, type Meeting } from './comm-api';
+import { alertMeeting } from './desktop-alerts';
 import { MeetingInvite } from './MeetingInvite';
 import { MeetingRoom } from './MeetingRoom';
 import { MeetingsTab } from './MeetingsTab';
@@ -35,17 +37,31 @@ export function CommHub() {
     enabled ? `${COMM}/meetings` : null,
     { refetchInterval: 30_000 },
   );
-  // Meetings that should ring: live, never joined, not dismissed, not the one we're in.
+  // Meetings that should ring: live and never joined (a booked meeting rings its host too),
+  // or booked and about to start; not dismissed, not the one we're in.
   const ringing = (meetingList?.meetings ?? []).filter(
     (m) =>
-      m.status === 'active' &&
-      !m.joinedAt &&
-      !m.isHost &&
+      ((m.status === 'active' && !m.joinedAt && (!m.isHost || m.scheduledFor)) ||
+        (m.status === 'scheduled' && m.canJoin)) &&
       m.id !== roomId &&
       !dismissed.includes(m.id),
   );
 
   useCommEvents(enabled);
+
+  // An emergency breaks through even while you're in another meeting.
+  const invite = ringing.find((m) => !roomId || m.kind === 'emergency');
+
+  // A system notification too, once per meeting, for when this tab is in the background.
+  const alerted = useRef(new Set<string>());
+  const joinRef = useRef<(id: string) => void>(() => undefined);
+  useEffect(() => {
+    for (const m of ringing) {
+      if (alerted.current.has(m.id)) continue;
+      alerted.current.add(m.id);
+      alertMeeting(m, () => joinRef.current(m.id));
+    }
+  }, [ringing]);
 
   // Chime when a new call request arrives for this doctor.
   const incoming = summary?.incomingCalls ?? 0;
@@ -55,16 +71,24 @@ export function CommHub() {
     lastIncoming.current = incoming;
   }, [incoming]);
 
+  function joinMeeting(id: string) {
+    // Switching calls (an emergency while in another meeting): leave the current one first.
+    if (roomId && roomId !== id)
+      void apiFetch(`${COMM}/meetings/${roomId}/leave`, { method: 'POST', body: {} }).catch(
+        () => undefined,
+      );
+    setRoomId(id);
+    setOpen(false);
+  }
+  useEffect(() => {
+    joinRef.current = joinMeeting;
+  });
+
   if (!enabled) return null;
 
   const invites = summary?.meetingInvites ?? 0;
   const unread =
     (summary?.unreadMessages ?? 0) + (summary?.unreadNotices ?? 0) + incoming + invites;
-
-  function joinMeeting(id: string) {
-    setRoomId(id);
-    setOpen(false);
-  }
 
   function openChat(id: string) {
     setConversationId(id);
@@ -74,12 +98,12 @@ export function CommHub() {
 
   return (
     <>
-      {roomId && <MeetingRoom meetingId={roomId} onClose={() => setRoomId(null)} />}
-      {!roomId && ringing[0] && (
+      {roomId && <MeetingRoom key={roomId} meetingId={roomId} onClose={() => setRoomId(null)} />}
+      {invite && (
         <MeetingInvite
-          meeting={ringing[0]}
-          onJoin={() => joinMeeting(ringing[0]!.id)}
-          onDismiss={() => setDismissed((d) => [...d, ringing[0]!.id])}
+          meeting={invite}
+          onJoin={() => joinMeeting(invite.id)}
+          onDismiss={() => setDismissed((d) => [...d, invite.id])}
         />
       )}
       {incoming > 0 && !(open && tab === 'calls') && (

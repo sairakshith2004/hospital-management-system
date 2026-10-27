@@ -8,6 +8,8 @@ export interface DashboardWidget {
   key: string;
   /** Shown to users holding any of these. Each widget loads its own real data. */
   anyOf: PermissionCode[];
+  /** Hidden from users holding any of these (a hospital-wide widget already covers it). */
+  noneOf?: PermissionCode[];
   Component: ComponentType;
 }
 
@@ -25,7 +27,9 @@ function formatLongDate(isoDate: string): string {
 export function HomePage() {
   const { user, can } = useAuth();
   if (!user) return null;
-  const widgets = DASHBOARD_WIDGETS.filter((w) => w.anyOf.some((p) => can(p)));
+  const widgets = DASHBOARD_WIDGETS.filter(
+    (w) => w.anyOf.some((p) => can(p)) && !(w.noneOf ?? []).some((p) => can(p)),
+  );
   return (
     <div className="space-y-6">
       <section className="relative overflow-hidden rounded-2xl border border-sky-100 bg-gradient-to-r from-sky-100 via-violet-50 to-teal-100 px-6 py-7 text-brand-900 shadow-sm shadow-sky-100 md:px-8">

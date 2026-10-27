@@ -631,8 +631,10 @@ describe('workflows A, B and C: visit → consultation → pharmacy, lab and bil
         (await docA.get(`/api/patients/${f.patient}/chart`)).body.chart.otherDoctorRecords,
       ).toBe(0);
 
-      // The Super Admin (chief executive) reads any chart without a care relationship, audited
-      // as executive access, and sees the pharmacy and lab queues, but does no clinical work.
+      // The Super Admin (head of the hospital) reads any chart without a care relationship,
+      // audited as executive access, sees the pharmacy and lab queues, and may do clinical
+      // work too (2026-10-27). Consulting still goes through a doctor profile, so without one
+      // the Super Admin can't write in another doctor's consultation.
       const ceo = await f.as(['SA']);
       const ceoChart = await ceo.get(`/api/patients/${f.patient}/chart`);
       expect(ceoChart.status).toBe(200);
@@ -649,7 +651,10 @@ describe('workflows A, B and C: visit → consultation → pharmacy, lab and bil
       expect(
         (await ceo.post(`/api/encounters/${enc}/notes`, { kind: 'addendum', body: 'Zz' })).status,
       ).toBe(403);
-      expect((await ceo.post(`/api/lab/orders/${orderId}/verify`)).status).toBe(403);
+      // Lab work is allowed now: this order is already verified, so it's a 409, not a 403.
+      const ceoVerify = await ceo.post(`/api/lab/orders/${orderId}/verify`);
+      expect(ceoVerify.status).toBe(409);
+      expect(ceoVerify.body.error.code).not.toBe('FORBIDDEN');
 
       // Billing: consultation + lab + dispensing lines; gapless number; payments.
       const draft = (await fin.get(`/api/invoices/${invoiceId}`)).body.invoice;

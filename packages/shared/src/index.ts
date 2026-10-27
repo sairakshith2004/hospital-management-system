@@ -27,4 +27,5 @@ export * from './schemas/lab.js';
 export * from './schemas/billing.js';
 export * from './schemas/operations.js';
 export * from './schemas/admin.js';
+export * from './schemas/account.js';
 export * from './schemas/communication.js';

@@ -366,8 +366,10 @@ describe('requirePermission', () => {
       authRoutes({
         db,
         loginLimiter: (_q, _s, n) => n(),
-        signupLimiter: (_q, _s, n) => n(),
+        passwordLimiter: (_q, _s, n) => n(),
         production: false,
+        appUrl: 'http://127.0.0.1:5173',
+        logger: createLogger({ level: 'silent' }),
       }),
     );
     api.get('/guarded', requirePermission(db, 'audit:read'), (_req, res) => {

@@ -7,7 +7,7 @@ import { useAuth } from './auth-context';
 
 /** Guards every page except /login. UX only: the API enforces access on every request. */
 export function RequireAuth() {
-  const { status, endReason, retry } = useAuth();
+  const { status, endReason, retry, user } = useAuth();
   const location = useLocation();
 
   if (status === 'loading') return <PageSpinner label="Checking your session…" />;
@@ -27,6 +27,13 @@ export function RequireAuth() {
     if (endReason === 'expired') params.set('expired', '1');
     const query = params.toString();
     return <Navigate to={`/login${query ? `?${query}` : ''}`} replace />;
+  }
+  // HR or an administrator chose the password: the person picks their own before anything else
+  // (the API refuses everything else meanwhile).
+  if (user?.mustChangePassword) {
+    if (location.pathname !== '/account/password')
+      return <Navigate to="/account/password" replace />;
+    return <Outlet />;
   }
   // The communication hub's chat button floats over every signed-in page, portals included.
   return (

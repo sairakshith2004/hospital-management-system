@@ -4,7 +4,7 @@
  * show the same records (e.g. stock in pharmacy and inventory) stay in step.
  */
 import { useMutation, useQuery, useQueryClient, type UseQueryOptions } from '@tanstack/react-query';
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
 import { apiFetch, ApiError } from './api';
 
 export function useApi<T>(
@@ -31,18 +31,26 @@ export function errorCode(err: unknown): string | null {
   return err instanceof ApiError ? err.code : null;
 }
 
+/**
+ * Reloads every cached read whose path starts with one of the prefixes. The returned
+ * function is stable across renders, so effects can depend on it without restarting
+ * (an unstable one made the meeting room rejoin on every render: camera flicker).
+ */
 export function useInvalidate() {
   const qc = useQueryClient();
-  return (...prefixes: string[]) =>
-    qc.invalidateQueries({
-      predicate: (q) => {
-        const k = q.queryKey[0];
-        return (
-          (typeof k === 'string' && prefixes.some((p) => k.startsWith(p))) ||
-          (k === 'scheduling' && prefixes.includes('scheduling'))
-        );
-      },
-    });
+  return useCallback(
+    (...prefixes: string[]) =>
+      qc.invalidateQueries({
+        predicate: (q) => {
+          const k = q.queryKey[0];
+          return (
+            (typeof k === 'string' && prefixes.some((p) => k.startsWith(p))) ||
+            (k === 'scheduling' && prefixes.includes('scheduling'))
+          );
+        },
+      }),
+    [qc],
+  );
 }
 
 /**

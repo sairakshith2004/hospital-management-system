@@ -62,12 +62,25 @@ const audit = async (action: string) =>
 
 describe('staff accounts and roles', () => {
   it(
-    'creates an account without roles, grants a role, and protects SA accounts and oneself',
+    'HR creates an account without roles, SA grants a role, and SA accounts and oneself are protected',
     tx(async () => {
       const f = await setup();
       const adm = await f.as(['ADM']);
       const sa = await f.as(['SA']);
-      const created = await adm.post('/api/admin/staff', {
+      const hr = await f.as(['HR']);
+      const newStaff = {
+        fullName: 'Zz Not Allowed',
+        employeeNo: 'ZZ-NEW-0',
+        departmentId: f.dept,
+        designation: 'Receptionist',
+        username: 'zz_new_x',
+        password: PASSWORD,
+        reason: 'Zz onboarding',
+      };
+      // Only HR (and SA) create staff accounts: not administrators, not anyone else.
+      for (const who of [adm, await f.as(['REC']), await f.as(['DOC'])])
+        expect((await who.post('/api/admin/staff', newStaff)).status).toBe(403);
+      const created = await hr.post('/api/admin/staff', {
         fullName: 'Zz New Receptionist',
         employeeNo: 'ZZ-NEW-1',
         departmentId: f.dept,
@@ -111,6 +124,18 @@ describe('staff accounts and roles', () => {
       ).toBe('SELF_CHANGE');
       expect((await audit('user_role.granted'))[0].changes).toEqual({ role: 'REC' });
       const rec = await f.session('zz_new_rec', PASSWORD);
+      // HR chose the password, so they must pick their own before working.
+      expect((await rec.get('/api/patients?q=zz')).body.error.code).toBe(
+        'PASSWORD_CHANGE_REQUIRED',
+      );
+      expect(
+        (
+          await rec.post('/api/auth/password/change', {
+            currentPassword: PASSWORD,
+            newPassword: 'Zz-own-chosen-Passw0rd',
+          })
+        ).status,
+      ).toBe(200);
       expect((await rec.get('/api/patients?q=zz')).status).toBe(200);
 
       // ADM can't touch an SA account; nobody changes their own status.
@@ -138,7 +163,7 @@ describe('staff accounts and roles', () => {
         status: 'active',
         reason: 'Zz back',
       });
-      const rec2 = await f.session('zz_new_rec', PASSWORD);
+      const rec2 = await f.session('zz_new_rec', 'Zz-own-chosen-Passw0rd');
       expect(
         (
           await adm.post(`/api/admin/users/${newUserId}/password`, {
@@ -224,7 +249,8 @@ describe('staff accounts and roles', () => {
     tx(async () => {
       const f = await setup();
       const adm = await f.as(['ADM']);
-      const emp = await adm.post('/api/admin/staff', {
+      const hr = await f.as(['HR']);
+      const emp = await hr.post('/api/admin/staff', {
         fullName: 'Dr. Zz Admin',
         employeeNo: 'ZZ-DOC-ADM',
         departmentId: f.dept,

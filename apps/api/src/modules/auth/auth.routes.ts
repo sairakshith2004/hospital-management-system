@@ -2,12 +2,23 @@
  *   POST /api/auth/login   JSON { username, password } → 200 { user, csrfToken } | 401
  *   GET  /api/auth/me      → 200 { user, csrfToken } | 401
  *   POST /api/auth/logout  X-CSRF-Token required → 204 | 401 | 403
- *   GET  /api/auth/signup/departments → 200 { departments: [{ id, name }] } (public)
- *   POST /api/auth/signup  JSON { fullName, username, departmentId, designation, password }
- *                          → 201 { status: "pending" } | 409 USERNAME_TAKEN | 422 | 429
- *   A pending account that signs in with the right password gets 403 ACCOUNT_PENDING.
+ *   POST /api/auth/password/forgot  JSON { identifier } (username or work email; public)
+ *                          → 202 { ok: true } always, so it never reveals whether an account
+ *                          exists; emails a one-time reset link when one matches
+ *   POST /api/auth/password/reset   JSON { token, password } (public) → 200 | 400 INVALID_RESET_LINK
+ *   POST /api/auth/password/change  JSON { currentPassword, newPassword } (signed in)
+ *                          → 200 | 400 WRONG_PASSWORD; ends the account's other sessions
+ *   There is no public sign-up: HR creates staff accounts (user:create, 2026-10-27).
+ *   An account left pending by the old sign-up that signs in with the right password gets
+ *   403 ACCOUNT_PENDING until an administrator approves or rejects it.
  */
-import { signupSchema, type AuthResponse } from '@hospitalos/shared';
+import {
+  changePasswordSchema,
+  forgotPasswordSchema,
+  resetPasswordWithLinkSchema,
+  type AuthResponse,
+} from '@hospitalos/shared';
+import type { Logger } from 'pino';
 import { Router, type RequestHandler, type Response } from 'express';
 import type { Database } from '../../db/client.js';
 import { auditContext, recordAudit } from '../../lib/audit.js';
@@ -24,13 +35,24 @@ import {
 import { findSessionUser } from './auth.repo.js';
 import { LoginBody } from './auth.schemas.js';
 import { authenticate } from './auth.service.js';
-import { signUp, signupDepartments } from './signup.service.js';
+import type { Mailer } from '../../lib/mailer.js';
+import {
+  changeOwnPassword,
+  requestPasswordReset,
+  resetPasswordWithLink,
+} from './password.service.js';
 
 export interface AuthRoutesOptions {
   db: Database;
   loginLimiter: RequestHandler;
-  signupLimiter: RequestHandler;
+  /** Forgot-password and reset-link requests per IP. */
+  passwordLimiter: RequestHandler;
   production: boolean;
+  /** Sends reset links; without it, "forgot password" can't email anyone. */
+  mailer?: Mailer | undefined;
+  /** The web app's address, for links in emails. */
+  appUrl: string;
+  logger: Logger;
   /** Account lockout after repeated wrong passwords (on unless turned off for development). */
   lockout?: boolean;
 }
@@ -48,7 +70,10 @@ const requireJson: RequestHandler = (req, _res, next) => {
 };
 
 function toBody(
-  user: Pick<AuthUser, 'id' | 'username' | 'fullName' | 'roles' | 'permissions'>,
+  user: Pick<
+    AuthUser,
+    'id' | 'username' | 'fullName' | 'roles' | 'permissions' | 'mustChangePassword'
+  >,
   csrfToken: string,
 ): AuthResponse {
   return {
@@ -58,6 +83,7 @@ function toBody(
       fullName: user.fullName,
       roles: user.roles,
       permissions: user.permissions,
+      mustChangePassword: user.mustChangePassword,
     },
     csrfToken,
   };
@@ -66,8 +92,11 @@ function toBody(
 export function authRoutes({
   db,
   loginLimiter,
-  signupLimiter,
+  passwordLimiter,
   production,
+  mailer,
+  appUrl,
+  logger,
   lockout = true,
 }: AuthRoutesOptions): Router {
   const router = Router();
@@ -107,14 +136,22 @@ export function authRoutes({
     res.json(toBody(user, csrfToken));
   });
 
-  router.get('/signup/departments', async (_req, res) => {
-    res.json({ departments: await signupDepartments(db) });
+  router.post('/password/forgot', passwordLimiter, requireJson, async (req, res) => {
+    const { identifier } = forgotPasswordSchema.parse(req.body);
+    await requestPasswordReset(db, identifier, auditContext(req, res), { mailer, appUrl, logger });
+    res.status(202).json({ ok: true });
   });
 
-  router.post('/signup', signupLimiter, requireJson, async (req, res) => {
-    const input = signupSchema.parse(req.body);
-    await signUp(db, input, auditContext(req, res));
-    res.status(201).json({ status: 'pending' });
+  router.post('/password/reset', passwordLimiter, requireJson, async (req, res) => {
+    const { token, password } = resetPasswordWithLinkSchema.parse(req.body);
+    await resetPasswordWithLink(db, token, password, auditContext(req, res));
+    res.json({ ok: true });
+  });
+
+  router.post('/password/change', requireAuth, requireJson, async (req, res) => {
+    const input = changePasswordSchema.parse(req.body);
+    await changeOwnPassword(db, requireUser(res).id, req.sessionID, input, auditContext(req, res));
+    res.json({ ok: true });
   });
 
   router.get('/me', requireAuth, (req, res) => {

@@ -19,6 +19,7 @@ export function makeUser(overrides: Partial<SessionUser> = {}): SessionUser {
     fullName: 'Test Receptionist',
     roles: ['REC'],
     permissions: ['patient:create', 'appointment:book'],
+    mustChangePassword: false,
     ...overrides,
   };
 }

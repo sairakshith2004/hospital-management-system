@@ -500,14 +500,29 @@ function AccessWork() {
   );
 }
 
+/** Holding this means the hospital-wide view, not one doctor's own. */
+const DOCTOR_WIDE: DashboardWidget['noneOf'] = ['appointment:read_all'];
+
 /** Widgets in display order. Each loads its own real data. */
 export const DASHBOARD_WIDGETS: DashboardWidget[] = [
   { key: 'front-desk', anyOf: ['appointment:read_all'], Component: FrontDeskToday },
   { key: 'doctors-today', anyOf: ['appointment:read_all'], Component: PatientsPerDoctorToday },
-  { key: 'my-day', anyOf: ['encounter:write'], Component: MyDay },
-  { key: 'my-queue', anyOf: ['encounter:write'], Component: MyQueue },
-  { key: 'my-upcoming', anyOf: ['encounter:write'], Component: MyUpcomingAppointments },
-  { key: 'my-consultations', anyOf: ['encounter:write'], Component: MyConsultations },
+  // A doctor's own day. The Super Admin (who also holds encounter:write) sees the
+  // hospital-wide front-desk and per-doctor widgets above instead.
+  { key: 'my-day', anyOf: ['encounter:write'], noneOf: DOCTOR_WIDE, Component: MyDay },
+  { key: 'my-queue', anyOf: ['encounter:write'], noneOf: DOCTOR_WIDE, Component: MyQueue },
+  {
+    key: 'my-upcoming',
+    anyOf: ['encounter:write'],
+    noneOf: DOCTOR_WIDE,
+    Component: MyUpcomingAppointments,
+  },
+  {
+    key: 'my-consultations',
+    anyOf: ['encounter:write'],
+    noneOf: DOCTOR_WIDE,
+    Component: MyConsultations,
+  },
   { key: 'follow-ups', anyOf: ['followup:schedule'], Component: FollowUpWork },
   { key: 'billing', anyOf: ['invoice:issue'], Component: BillingWork },
   { key: 'doctor-earnings', anyOf: ['report:finance'], Component: DoctorEarningsMonth },

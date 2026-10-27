@@ -3,7 +3,7 @@
  * ringing until the person joins or dismisses; normal meetings show a card and chime once.
  */
 import { useEffect } from 'react';
-import { formatTime } from '../../lib/format';
+import { formatDateTime, formatTime } from '../../lib/format';
 import { playChime, type Meeting } from './comm-api';
 
 export function MeetingInvite({
@@ -78,13 +78,15 @@ export function MeetingInvite({
       className="fixed bottom-4 left-4 z-[70] w-[min(360px,calc(100vw-2rem))] space-y-3 rounded-xl border border-sky-200 bg-white p-4 shadow-2xl dark:border-slate-700 dark:bg-slate-900"
     >
       <p className="text-xs font-semibold tracking-wide text-brand-700 uppercase dark:text-brand-300">
-        📹 Meeting invitation
+        {meeting.status === 'scheduled' ? '⏰ Meeting starting soon' : '📹 Meeting invitation'}
       </p>
       <h2 id="meeting-invite-title" className="font-semibold">
         {meeting.title}
       </h2>
       <p className="text-sm text-slate-600 dark:text-slate-300">
-        {meeting.hostName} invited you · {inCall} in the call
+        {meeting.status === 'scheduled' && meeting.scheduledFor
+          ? `${meeting.hostName} booked it for ${formatDateTime(meeting.scheduledFor)}`
+          : `${meeting.hostName} invited you · ${inCall} in the call`}
       </p>
       <div className="flex gap-2">
         <button

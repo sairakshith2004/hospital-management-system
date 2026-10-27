@@ -1,0 +1,15 @@
+# LiveKit media server for HospitalOS video meetings (local development).
+# The API key and secret come from LIVEKIT_KEYS (set by docker-compose from .env), never this file.
+port: 7880
+rtc:
+  # One TCP and one UDP port for all media, so only three ports are published.
+  tcp_port: 7881
+  udp_port: 7882
+  use_external_ip: false
+room:
+  # Rooms are created on first join and closed a minute after the last person leaves.
+  empty_timeout: 60
+  departure_timeout: 20
+  max_participants: 60
+logging:
+  level: info
